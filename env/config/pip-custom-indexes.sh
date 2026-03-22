@@ -14,7 +14,9 @@ if [[ -z "${ENV_UV:-}" ]]; then
     exit 1
 fi
 
-# Bloomberg API
-"$ENV_UV" pip install --python "$ENV_PYTHON" \
+# Bloomberg API (fails gracefully outside Bloomberg network)
+if ! "$ENV_UV" pip install --python "$ENV_PYTHON" \
     --index-url=https://bcms.bloomberg.com/pip/simple \
-    blpapi || echo "WARNING: blpapi install failed (expected outside Bloomberg network)"
+    blpapi 2>/dev/null; then
+    echo "WARNING: blpapi install skipped (expected outside Bloomberg network)"
+fi
