@@ -177,3 +177,32 @@ unset __conda_setup
 if command -v conda &>/dev/null; then
 	conda activate /opt/conda/envs/prod 2>/dev/null || true
 fi
+
+# ------ Bitwarden CLI auto-unlock (via 1Password) ------
+if command -v bw &>/dev/null && command -v op &>/dev/null; then
+    bw-unlock() {
+        if [[ -n "$BW_SESSION" ]]; then
+            return 0
+        fi
+
+        local bw_server bw_email bw_password
+        bw_server="$(op read 'op://Tapai/Bitwarden/server')" || { echo "Failed to read BW server from 1Password" >&2; return 1; }
+        bw_email="$(op read 'op://Tapai/Bitwarden/username')" || { echo "Failed to read BW email from 1Password" >&2; return 1; }
+        bw_password="$(op read 'op://Tapai/Bitwarden/password')" || { echo "Failed to read BW password from 1Password" >&2; return 1; }
+
+        bw config server "$bw_server" 2>/dev/null || true
+
+        if ! bw login --check &>/dev/null; then
+            BW_PASSWORD="$bw_password" bw login "$bw_email" --passwordenv BW_PASSWORD --nointeraction &>/dev/null || { echo "BW login failed" >&2; return 1; }
+        fi
+
+        export BW_SESSION
+        BW_SESSION="$(BW_PASSWORD="$bw_password" bw unlock --passwordenv BW_PASSWORD --raw)" || { echo "BW unlock failed" >&2; return 1; }
+        bw sync --quiet 2>/dev/null
+    }
+
+    # Auto-unlock in interactive shells
+    if [[ $- == *i* && -z "$BW_SESSION" ]]; then
+        bw-unlock
+    fi
+fi

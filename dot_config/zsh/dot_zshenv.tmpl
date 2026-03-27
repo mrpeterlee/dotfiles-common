@@ -5,6 +5,11 @@
 # CODEX
 export CODEX_AUTO_APPROVE=1
 
+{{ if .op_service_account_token -}}
+# 1Password Service Account
+export OP_SERVICE_ACCOUNT_TOKEN={{ .op_service_account_token | quote }}
+{{ end -}}
+
 # Infisical
 {{- if eq .chezmoi.hostname "tapai-admin" }}
 export INFISICAL_API_URL="https://infisical.tapai.com/api"
