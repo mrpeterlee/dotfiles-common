@@ -5,13 +5,9 @@
 # CODEX
 export CODEX_AUTO_APPROVE=1
 
-# 1Password Service Accounts
-if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/service-accounts.env" ]]; then
-    source "${XDG_CONFIG_HOME:-$HOME/.config}/op/service-accounts.env"
-{{ if .op_service_account_token -}}
-elif [[ -z "$OP_SERVICE_ACCOUNT_TOKEN" ]]; then
-    export OP_SERVICE_ACCOUNT_TOKEN={{ .op_service_account_token | quote }}
-{{ end -}}
+# 1Password
+if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/env" ]]; then
+    source "${XDG_CONFIG_HOME:-$HOME/.config}/op/env"
 fi
 
 # Infisical

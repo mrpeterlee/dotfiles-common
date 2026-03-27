@@ -29,9 +29,6 @@
 {{-   $pkgmgr = "dnf" -}}
 {{- end -}}
 
-{{- /* 1Password Service Account token (bootstrap credential) */ -}}
-{{- $opServiceAccountToken := promptStringOnce . "op_service_account_token" "1Password Service Account token (ops_...)" "" -}}
-
 {{- /* Detect if 1Password CLI is available and signed in */ -}}
 {{- $hasOp := false -}}
 {{- $opSignedIn := false -}}
@@ -84,7 +81,6 @@ sourceDir = {{ joinPath .chezmoi.homeDir ".files" | quote }}
     pkgmgr = {{ $pkgmgr | quote }}
     hasOp = {{ $hasOp }}
     opSignedIn = {{ $opSignedIn }}
-    op_service_account_token = {{ $opServiceAccountToken | quote }}
 
     # Infrastructure secrets (from 1Password or defaults)
     [data.infra]
