@@ -34,6 +34,7 @@ cli.ps1
 .config/zsh/**
 .config/tmux/**
 .config/tmuxinator/**
+.config/nvim/**
 .chezmoiscripts/*.sh
 cli
 env/**
