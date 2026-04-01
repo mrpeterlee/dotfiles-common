@@ -104,4 +104,20 @@ if (-not (Test-Path $filesLink)) {
     }
 }
 
+# Agents directory symlink: C:\Users\peter\.agents -> D:\lab\.agents
+$agentsLink = Join-Path $homeDir ".agents"
+$agentsTarget = "D:\lab\.agents"
+if (Test-Path $agentsTarget) {
+    if (-not (Test-Path $agentsLink)) {
+        Ensure-Symlink -Link $agentsLink -Target $agentsTarget
+    } else {
+        $item = Get-Item $agentsLink -Force
+        if ($item.LinkType -in @("SymbolicLink", "Junction")) {
+            Write-Host "    [ok] $agentsLink"
+        } else {
+            Write-Host "    [ok] $agentsLink (directory exists)"
+        }
+    }
+}
+
 Write-Host "==> Windows symlink setup complete."
