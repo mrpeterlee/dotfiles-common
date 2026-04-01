@@ -99,16 +99,6 @@ sourceDir = {{ joinPath .chezmoi.homeDir ".files" | quote }}
 [interpreters.ps1]
     command = "pwsh"
     args = ["-NoProfile", "-NoLogo"]
-
-[edit]
-    command = "nvim.exe"
-
-[diff]
-    pager = "delta"
-
-[merge]
-    command = "nvim.exe"
-    args = ["-d", "{{ "{{" }} .Destination {{ "}}" }}", "{{ "{{" }} .Source {{ "}}" }}", "{{ "{{" }} .Target {{ "}}" }}"]
 {{ else -}}
 [edit]
     command = "nvim"
