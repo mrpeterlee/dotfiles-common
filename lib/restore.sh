@@ -96,11 +96,6 @@ ensure_conda_env() {
     chmod 755 "${conda_dir}/envs" 2>/dev/null || true
 }
 
-# Check if running from local source
-is_local_source() {
-    [[ -f "${SCRIPT_DIR}/.chezmoi.toml.tmpl" ]]
-}
-
 # Install essential CLI tools into ~/.local/bin when conda env is not available.
 # These are the minimum tools needed for a functional zsh experience.
 install_essential_tools() {
