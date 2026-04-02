@@ -37,7 +37,6 @@ CHEZMOI_CONFIG_DIR="${HOME}/.config/chezmoi"
 
 # Source shared libraries
 source "${SCRIPT_DIR}/lib/common.sh"
-source "${SCRIPT_DIR}/lib/platform.sh"
 
 cmd_help() {
     cat <<'EOF'
