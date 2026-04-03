@@ -32,7 +32,7 @@ cmd_backup() {
 
     # Backup OAuth tokens via agents CLI
     if [[ -x "$HOME/.agents/cli" ]]; then
-        "$HOME/.agents/cli" backup-oauth
+        "$HOME/.agents/cli" backup
     fi
 
     echo ""
