@@ -6,6 +6,8 @@
 #   cli <command> [options]
 #
 # Commands:
+#   apply       Apply dotfiles from repo to system (lightweight chezmoi apply)
+#   update      Update all installed components (dotfiles, externals, conda, tools)
 #   backup      Capture live system changes back into the repo
 #   restore     Apply dotfiles from repo to system (installs prereqs if needed)
 #   conda       Manage conda environments (build, nuke, rollback, status)
@@ -13,6 +15,8 @@
 #   help        Show this help message
 #
 # Examples:
+#   cli apply                # Quick chezmoi apply (dotfiles only)
+#   cli update               # Update dotfiles, externals, conda, tools, agents
 #   cli backup               # Re-add changed files from system to repo
 #   cli restore              # Apply dotfiles + install prereqs if needed
 #   cli restore --force      # Clean-slate reinstall
@@ -51,6 +55,8 @@ cmd_help() {
       cli <command> [options]
 
   COMMANDS:
+      apply         Apply dotfiles (lightweight chezmoi apply)
+      update        Update all installed components
       backup        Capture live system changes back into the repo
       restore       Apply dotfiles from repo to system (installs prereqs)
       conda         Manage conda environments
@@ -79,13 +85,19 @@ cmd_help() {
 
   COMMON WORKFLOWS:
 
+      # Apply dotfiles (quick)
+      $ cli apply
+
+      # Update everything (dotfiles + externals + conda + agents)
+      $ cli update
+
       # Capture system changes into repo
       $ cli backup
       $ git diff
       $ git commit -am "chore: sync dotfiles"
       $ git push
 
-      # Apply repo to system
+      # Full install on a fresh machine
       $ cli restore
 
       # See what chezmoi would change
@@ -117,6 +129,14 @@ main() {
     shift || true
 
     case "$cmd" in
+        apply)
+            source "${SCRIPT_DIR}/lib/apply.sh"
+            cmd_apply "$@"
+            ;;
+        update)
+            source "${SCRIPT_DIR}/lib/update.sh"
+            cmd_update "$@"
+            ;;
         backup)
             source "${SCRIPT_DIR}/lib/backup.sh"
             cmd_backup "$@"

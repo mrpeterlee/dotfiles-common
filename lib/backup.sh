@@ -30,6 +30,11 @@ cmd_backup() {
         success "No changes detected"
     fi
 
+    # Backup OAuth tokens via agents CLI
+    if [[ -x "$HOME/.agents/cli" ]]; then
+        "$HOME/.agents/cli" backup-oauth
+    fi
+
     echo ""
     echo "Next: run 'git diff' to review, then 'git commit && git push'"
     echo ""
