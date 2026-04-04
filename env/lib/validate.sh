@@ -63,6 +63,16 @@ validate_env() {
         fi
     done
 
+    # Check gem-installed tools (in share/rubygems/bin/)
+    local -a gem_tools=(tmuxinator)
+    for tool in "${gem_tools[@]}"; do
+        if [[ -x "${prefix}/share/rubygems/bin/${tool}" ]]; then
+            success "${tool} present (gem)"
+        else
+            warn "${tool} not found in ${prefix}/share/rubygems/bin/ (non-critical)"
+        fi
+    done
+
     # Check tools expected on system PATH (not in the conda env)
     local -a system_tools=(tmux op)
     for tool in "${system_tools[@]}"; do

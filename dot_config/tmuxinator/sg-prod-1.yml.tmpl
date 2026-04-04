@@ -36,9 +36,9 @@ windows:
             - cd ~/acap
 
   - CCs:
-      layout: even-horizontal
+      layout: tiled
       panes:
-        - acap-cc-1
+        - acap-cc-1:
             - mkdir -p /tmp/claude_telegram_sessions/acap-cc1
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/acap-cc1/access.json ~/.claude/channels/telegram/access.json
@@ -47,7 +47,7 @@ windows:
             - cd ~/acap
             - claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official
 
-        - acap-cc-a
+        - acap-cc-a:
             - mkdir -p /tmp/claude_telegram_sessions/acap-cc2
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/acap-cc2/access.json ~/.claude/channels/telegram/access.json

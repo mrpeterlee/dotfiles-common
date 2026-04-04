@@ -47,7 +47,7 @@ zoxide
 git-delta
 eza
 lazygit
-c-compiler
+compilers
 
 # Type stubs & extensions
 pandas-stubs
