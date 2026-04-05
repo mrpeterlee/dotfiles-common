@@ -6,29 +6,12 @@
 # Assumes SCRIPT_DIR, CHEZMOI_BIN are set by the caller.
 
 cmd_update() {
-    local no_backup=false
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --no-backup) no_backup=true; shift ;;
-            *) error "Unknown option: $1"; exit 1 ;;
-        esac
-    done
-
     echo ""
     echo -e "${BOLD}Updating All Components${RESET}"
     echo "────────────────────────────────────────"
     echo ""
 
     ensure_chezmoi
-
-    # 0. Safety backup (capture current state before overwriting)
-    if [[ "$no_backup" == "false" ]]; then
-        info "Safety backup before update..."
-        source "${SCRIPT_DIR}/lib/backup.sh"
-        cmd_backup
-        echo ""
-    fi
 
     # 1. Apply dotfiles
     info "Applying dotfiles..."

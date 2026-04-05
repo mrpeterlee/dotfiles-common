@@ -47,26 +47,6 @@ build_env() {
         warn "npm not found at ${npm_bin}, skipping npm tools"
     fi
 
-    info "Setting up Ruby gems..."
-    local gem_bin="${prefix}/bin/gem"
-    if [[ -x "$gem_bin" ]]; then
-        local saved_gem_path="$PATH"
-        export PATH="${prefix}/bin:${PATH}"
-        export GEM_HOME="${prefix}/share/rubygems"
-        export GEM_PATH="${prefix}/share/rubygems"
-
-        info "  gem update --system"
-        "$gem_bin" update --system 2>&1 | tail -3
-
-        info "  gem install tmuxinator"
-        "$gem_bin" install --no-document tmuxinator 2>&1 | tail -3
-
-        unset GEM_HOME GEM_PATH
-        export PATH="$saved_gem_path"
-    else
-        warn "gem not found at ${gem_bin}, skipping gem packages"
-    fi
-
     info "Installing packages from custom indexes..."
     ENV_PYTHON="$env_python" ENV_UV="$env_uv" source "${config_dir}/pip-custom-indexes.sh" || true
 

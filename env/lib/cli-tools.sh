@@ -33,6 +33,8 @@ install_cli_tools() {
     _install_twm      "$prefix" "$bin_dir"
     _install_aws      "$bin_dir" "$tmp"
     _install_ohmyposh "$bin_dir" "$arch_go"
+    _install_tmuxinator "$prefix" "$bin_dir" "$tmp"
+
     success "Standalone CLI tools installed"
 }
 
@@ -217,7 +219,7 @@ _install_twm() {
         export PATH="$saved_path"
         return 0
     fi
-    # compilers conda package provides <arch>-conda-linux-gnu-cc; also try plain cc/gcc
+    # c-compiler conda package provides <arch>-conda-linux-gnu-cc; also try plain cc/gcc
     local conda_cc
     conda_cc="$(command -v "$(uname -m)-conda-linux-gnu-cc" 2>/dev/null \
              || command -v cc 2>/dev/null \
@@ -275,3 +277,31 @@ _install_ohmyposh() {
     success "oh-my-posh ${tag}"
 }
 
+# ── Tmuxinator (tmux session manager) ───────────────────────────────────────
+
+_install_tmuxinator() {
+    local prefix="$1" bin_dir="$2" tmp="$3"
+    info "Installing tmuxinator..."
+    local tag
+    tag=$(curl -sL https://api.github.com/repos/tmuxinator/tmuxinator/releases/latest | jq -r '.tag_name')
+    if [[ -z "$tag" || "$tag" == "null" ]]; then
+        warn "Could not determine tmuxinator version, skipping"
+        return 0
+    fi
+    local version="${tag#v}"
+    curl -sLo "${tmp}/tmuxinator-${version}.gem" \
+        "https://github.com/tmuxinator/tmuxinator/releases/download/${tag}/tmuxinator-${version}.gem"
+    if [[ ! -f "${tmp}/tmuxinator-${version}.gem" ]]; then
+        warn "Failed to download tmuxinator gem, skipping"
+        return 0
+    fi
+    # Install gem into the conda env's default rubygems directory.
+    # Conda's ruby_activate.sh sets GEM_HOME=$CONDA_PREFIX/share/rubygems/
+    # and adds its bin/ to PATH, so no symlink is needed.
+    "${bin_dir}/gem" install --no-document "${tmp}/tmuxinator-${version}.gem" 2>&1 | tail -3
+    if [[ -f "${prefix}/share/rubygems/bin/tmuxinator" ]]; then
+        success "tmuxinator ${version}"
+    else
+        warn "tmuxinator gem install did not produce a binary"
+    fi
+}
