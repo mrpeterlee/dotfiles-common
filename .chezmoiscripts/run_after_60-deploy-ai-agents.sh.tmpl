@@ -13,8 +13,8 @@ fi
 
 # Org-level agents
 if [[ -x "$HOME/acap/.agents/cli" ]]; then
-    echo "  Running ~/acap/.agents/cli apply..."
-    "$HOME/acap/.agents/cli" apply
+    echo "  Running ~/acap/.agents/cli install..."
+    "$HOME/acap/.agents/cli" install
 else
     echo "  Skipping org agents: ~/acap/.agents/cli not found"
 fi
