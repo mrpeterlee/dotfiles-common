@@ -8,8 +8,7 @@ windows:
       panes:
         - acap-1:
             - cd ~/acap
-            # - /usr/bin/inxi
-            # - curl "wttr.in/newyork?m&lang=zh-cn"
+            - curl "wttr.in/singapore?m&lang=zh-cn"
 
   - ACap-2:
       layout: even-horizontal
@@ -47,6 +46,8 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/acap
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /gstack-upgrade
+            - /using-superpowers
 
         - acap_cc_2:
             - sleep 17
@@ -58,6 +59,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/acap
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
         - acap_cc_3:
             - sleep 33
@@ -69,6 +71,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/acap
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
         - acap_cc_4:
             - sleep 51
@@ -80,6 +83,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/acap
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
         - acap_cc_5:
             - sleep 68
@@ -91,6 +95,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/acap
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
 
   - Tapai-CCs:
@@ -106,6 +111,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
         - tapai_cc_2:
             - sleep 102
@@ -117,6 +123,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
         - tapai_cc_3:
             - sleep 118
@@ -128,6 +135,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
         - tapai_cc_4:
             - sleep 136
@@ -139,6 +147,7 @@ windows:
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
             - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - /using-superpowers
 
   - monitor:
       layout: tiled
@@ -153,24 +162,6 @@ windows:
             ## - . parse_yml ${HOME}/.lab/github.yml && cd /lab/paper/datalab_core && make build
             ## - bash -c ". parse_yml ${HOME}/.lab/github.yml && cd /lab/paper/datalab_core && make build && make push"
             ## - bash -c ". parse_yml ${HOME}/.lab/github.yml && cd /lab/prod/datalab_core && git checkout prod && git fetch --all && git reset --hard origin/main && make build labenv=prod dbenv=prod && make push labenv=prod dbenv=prod"
-
-            # Build datalab_equities
-            ## - cd /lab/paper/datalab_equities
-            ## - docker build . --file ./Dockerfile --tag {{ .infra.docker_registry }}/inteclab/datalab_equities/datalab_equities:latest --build-arg image_url={{ .infra.docker_registry }}/inteclab/datalab_core/datalab_core:latest
-            ## - docker push {{ .infra.docker_registry }}/inteclab/datalab_equities/datalab_equities:latest
-
-            ## - cd /lab/prod/datalab_equities
-            ## - docker build . --file ./Dockerfile --tag {{ .infra.docker_registry }}/inteclab/datalab_equities/datalab_equities:prod --build-arg image_url={{ .infra.docker_registry }}/inteclab/datalab_core/datalab_core:prod
-            ## - docker push {{ .infra.docker_registry }}/inteclab/datalab_equities/datalab_equities:prod
-
-            # Build datalab_crypto
-            ## - cd /lab/paper/datalab_crypto
-            ## - docker build . --file ./Dockerfile --tag {{ .infra.docker_registry }}/inteclab/datalab_crypto/datalab_crypto:latest --build-arg image_url={{ .infra.docker_registry }}/inteclab/datalab_core/datalab_core:latest
-            ## - docker push {{ .infra.docker_registry }}/inteclab/datalab_crypto/datalab_crypto:latest
-
-            ## - cd /lab/prod/datalab_crypto
-            ## - docker build . --file ./Dockerfile --tag {{ .infra.docker_registry }}/inteclab/datalab_crypto/datalab_crypto:prod --build-arg image_url={{ .infra.docker_registry }}/inteclab/datalab_core/datalab_core:prod
-            ## - docker push {{ .infra.docker_registry }}/inteclab/datalab_crypto/datalab_crypto:prod
 
           #- glances
           # - ts flightlog stream -d
@@ -201,17 +192,6 @@ windows:
         # - python /lab/paper/finclab/finclab/sh/bin/skype.py
         - backgrounds-tasks2:
             - cd
-            ## - /lab/paper/datalab_core/datalab_core/bin/check_docker_image
-            ## - /lab/paper/datalab_equities/datalab_equities/bin/check_docker_image
-            ## # - nvim --headless --listen {{ .infra.internal_ip }}:{{ .infra.internal_port }}
-            ## - echo update sg.{{ .infra.base_domain }}
-            ## - /lab/paper/finclab/finclab/sh/bin/aws_change_dns_subdomain_ip sg.{{ .infra.base_domain }} {{ .infra.aws_route53_zone_id }} none {{ .infra.aws_iam_role }}
-            ## - /lab/paper/finclab/finclab/sh/bin/aws_change_dns_subdomain_ip n8n.{{ .infra.base_domain }} {{ .infra.aws_route53_zone_id }} none {{ .infra.aws_iam_role }}
-            ## - /lab/paper/finclab/finclab/sh/bin/aws_change_dns_subdomain_ip whoami.{{ .infra.base_domain }} {{ .infra.aws_route53_zone_id }} none {{ .infra.aws_iam_role }}
-            ## - /lab/paper/finclab/finclab/sh/bin/aws_change_dns_subdomain_ip traefik.{{ .infra.base_domain }} {{ .infra.aws_route53_zone_id }} none {{ .infra.aws_iam_role }}
-            ## - /lab/paper/finclab/finclab/sh/bin/aws_change_dns_subdomain_ip docker.{{ .infra.base_domain }} {{ .infra.aws_route53_zone_id }} none {{ .infra.aws_iam_role }}
-            ## - cd ~/acap
-            ## - happy --model opus --yolo
 
         #- make -C /lab/prod/labenv start
 # Optional tmux socket
