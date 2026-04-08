@@ -10,7 +10,7 @@ Host *
 Host acap
     HostName 52.221.6.72
     User peter
-    IdentityFile ~/.ssh/acap-admin-key.pem
+    IdentityFile ~/.ssh/acap-admin_peter.pem
 
 # Host tapai-admin
     # HostName 13.251.46.169
@@ -21,7 +21,7 @@ Host acap
 Host tapai
     HostName 13.251.46.169
     User peter
-    IdentityFile ~/.ssh/tapai-peterlee.pem
+    IdentityFile ~/.ssh/tapai-admin_peter.pem
 {{- if ne .chezmoi.hostname "acap-admin" }}
     ProxyJump acap
 {{- end }}
@@ -30,13 +30,20 @@ Host sg-prod-1 sg
     HostName sg-prod-1.acap.cc
     Port 55555
     User peter
-    IdentityFile ~/.ssh/sg-prod-1_peter_github
+    IdentityFile ~/.ssh/sg-prod-1_peter
 
 Host sg-local
     HostName 10.1.1.100
     Port 22
     User peter
-    IdentityFile ~/.ssh/sg-prod-1_peter_github
+    IdentityFile ~/.ssh/sg-prod-1_peter
+
+Host cn-prod-1 cn
+    # HostName 100.64.0.3  # Tailscale mesh (GFW-proof)
+    HostName cn-prod-1.acap.cc
+    Port 55555
+    User peter
+    IdentityFile ~/.ssh/cn-prod-1_peter
 
 Host claw-peter
     HostName sg.acap.cc
