@@ -332,7 +332,7 @@ If validation fails, the new env is deleted and the `prod` symlink is **not** sw
 
 The env is shared by all users on a given host. `/opt` must be owned by `peter`.
 
-To deploy to a remote host (e.g. `acap-admin` at `52.221.6.72`):
+To deploy to a remote host (e.g. `acap-admin` at `18.138.191.35`):
 
 ```bash
 # 1. Sync dotfiles to remote

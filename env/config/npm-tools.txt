@@ -5,3 +5,4 @@
 pnpm@latest-10
 wrangler
 @infisical/cli
+@n8n/cli
