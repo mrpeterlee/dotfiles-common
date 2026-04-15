@@ -8,6 +8,10 @@ export CODEX_AUTO_APPROVE=1
 # Claude Code (ECC hooks)
 export CLAUDE_PLUGIN_ROOT="$HOME/.claude"
 
+# Claude Code unified config layout: keep .claude.json inside ~/.claude/
+# instead of $HOME, so profile snapshots can be a single self-contained dir.
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+
 # 1Password
 if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/env" ]]; then
     source "${XDG_CONFIG_HOME:-$HOME/.config}/op/env"
