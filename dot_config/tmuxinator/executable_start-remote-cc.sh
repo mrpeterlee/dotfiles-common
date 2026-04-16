@@ -31,6 +31,7 @@ if [ "$SLEEP_DELAY" -gt 0 ] 2>/dev/null; then
     tmux send-keys -t "$SESSION" "sleep $SLEEP_DELAY" Enter
 fi
 
+tmux send-keys -t "$SESSION" "export PATH=\$HOME/.bun/bin:\$PATH && source ~/.config/op/env 2>/dev/null && export OP_SERVICE_ACCOUNT_TOKEN" Enter
 tmux send-keys -t "$SESSION" "mkdir -p /tmp/claude_telegram_sessions/${STATE_DIR}" Enter
 tmux send-keys -t "$SESSION" "test -f /tmp/claude_telegram_sessions/${STATE_DIR}/access.json || cp ~/.claude/channels/telegram/access.json /tmp/claude_telegram_sessions/${STATE_DIR}/access.json" Enter
 tmux send-keys -t "$SESSION" "export TELEGRAM_BOT_TOKEN=\$(op read '${OP_BOT_REF}')" Enter
