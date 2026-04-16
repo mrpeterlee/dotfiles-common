@@ -4,11 +4,17 @@ set -euo pipefail
 echo "==> Deploying AI agent configurations..."
 
 # User-level agents
-if [[ -x "$HOME/.agents/cli" ]]; then
-    echo "  Running ~/.agents/cli apply..."
-    "$HOME/.agents/cli" apply
+if [[ -d "$HOME/.agents" ]]; then
+    if [[ -x "$HOME/.agents/cli" ]]; then
+        echo "  Running ~/.agents/cli apply..."
+        if ! "$HOME/.agents/cli" apply; then
+            echo "  ⚠ Skipping user agents: ~/.agents/cli apply failed (cli may be outdated; try 'cd ~/.agents && git pull')"
+        fi
+    else
+        echo "  ⚠ Skipping user agents: ~/.agents exists but cli is not executable"
+    fi
 else
-    echo "  Skipping user agents: ~/.agents/cli not found"
+    echo "  ⊘ Skipping user agents: ~/.agents directory does not exist (clone https://github.com/... to enable)"
 fi
 
 # Org-level agents
