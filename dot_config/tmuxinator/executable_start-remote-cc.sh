@@ -2,7 +2,7 @@
 # start-remote-cc.sh — Bootstrap and attach to a remote Claude Code tmux session
 #
 # Creates a detached tmux session on the remote host, sends all setup commands
-# to it via non-interactive SSH, then attaches via autossh for persistent reconnection.
+# to it via non-interactive SSH, then attaches via ssh with auto-reconnect.
 #
 # If the remote tmux session already exists, setup is skipped (just attaches).
 #
@@ -18,7 +18,7 @@ SESSION="cc_${WORKTREE}"
 
 # Phase 1: Create remote tmux session and send setup commands via non-interactive SSH
 # Skipped if session already exists (e.g., reconnecting after SSH drop)
-ssh "$HOST" bash -s -- "$SESSION" "$STATE_DIR" "$OP_BOT_REF" "$WORK_DIR" "$SLEEP_DELAY" "$WORKTREE" << 'REMOTE' || true
+ssh "$HOST" "bash -s -- '$SESSION' '$STATE_DIR' '$OP_BOT_REF' '$WORK_DIR' '$SLEEP_DELAY' '$WORKTREE'" << 'REMOTE' || true
 SESSION="$1"; STATE_DIR="$2"; OP_BOT_REF="$3"; WORK_DIR="$4"; SLEEP_DELAY="$5"; WORKTREE="$6"
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
@@ -40,5 +40,9 @@ tmux send-keys -t "$SESSION" "cd ~/${WORK_DIR}" Enter
 tmux send-keys -t "$SESSION" "claude --worktree ${WORKTREE} --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions" Enter
 REMOTE
 
-# Phase 2: Attach to remote tmux session with autossh for persistent connection
-exec autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t "$HOST" "tmux attach -t $SESSION"
+# Phase 2: Attach to remote tmux session with auto-reconnect loop
+while true; do
+    ssh -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t "$HOST" "tmux attach -t $SESSION"
+    echo "SSH disconnected. Reconnecting in 5s..."
+    sleep 5
+done
