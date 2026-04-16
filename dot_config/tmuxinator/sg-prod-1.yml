@@ -34,7 +34,7 @@ windows:
         - acap-5:
             - cd ~/acap
 
-  - ACap-CCs:
+  - sg-prod-1_CCs:
       layout: tiled
       panes:
         - acap_cc_1:
@@ -48,7 +48,7 @@ windows:
             - claude --worktree acap_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
         - acap_cc_2:
-            - sleep 17
+            - sleep 28
             - mkdir -p /tmp/claude_telegram_sessions/acap_cc_2
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/acap_cc_2/access.json ~/.claude/channels/telegram/access.json
@@ -58,8 +58,34 @@ windows:
             - cd ~/acap
             - claude --worktree acap_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
+        - alpha_cc_1:
+            - sleep 58
+            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_5
+            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
+            - ensure_file /tmp/claude_telegram_sessions/acap_cc_5/access.json ~/.claude/channels/telegram/access.json
+            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc5_bot/credential')"
+            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_5"
+            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
+            - cd ~/acap
+            - claude --worktree alpha_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+
+        - alpha_cc_2:
+            - sleep 113
+            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_6
+            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
+            - ensure_file /tmp/claude_telegram_sessions/acap_cc_6/access.json ~/.claude/channels/telegram/access.json
+            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc6_bot/credential')"
+            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_6"
+            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
+            - cd ~/acap
+            - claude --worktree alpha_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+
+
+  - acap-admin_CCs:
+      layout: tiled
+      panes:
         - acap_cc_3:
-            - sleep 33
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t acap "tmux new -A -s cc_acap_cc_3"
             - mkdir -p /tmp/claude_telegram_sessions/acap_cc_3
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/acap_cc_3/access.json ~/.claude/channels/telegram/access.json
@@ -70,7 +96,8 @@ windows:
             - claude --worktree acap_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
         - acap_cc_4:
-            - sleep 51
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t acap "tmux new -A -s cc_acap_cc_4"
+            - sleep 17
             - mkdir -p /tmp/claude_telegram_sessions/acap_cc_4
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/acap_cc_4/access.json ~/.claude/channels/telegram/access.json
@@ -80,28 +107,8 @@ windows:
             - cd ~/acap
             - claude --worktree acap_cc_4 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
-        - alpha_cc_1:
-            - sleep 68
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_5
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_5/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc5_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_5"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree alpha_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-        - alpha_cc_2:
-            - sleep 153
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_6
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_6/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc6_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_6"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree alpha_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
         - alpha_cc_3:
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t acap "tmux new -A -s cc_alpha_cc_3"
             - sleep 170
             - mkdir -p /tmp/claude_telegram_sessions/acap_cc_7
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
@@ -112,11 +119,12 @@ windows:
             - cd ~/acap
             - claude --worktree alpha_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
+
   - Tapai-CCs:
       layout: tiled
       panes:
         - tapai_cc_1:
-            - sleep 85
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_1"
             - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_1
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/tapai_cc_1/access.json ~/.claude/channels/telegram/access.json
@@ -124,10 +132,11 @@ windows:
             - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_1"
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
-            - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - claude --worktree tapai_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
         - tapai_cc_2:
-            - sleep 102
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_2"
+            - sleep 17
             - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_2
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/tapai_cc_2/access.json ~/.claude/channels/telegram/access.json
@@ -135,10 +144,11 @@ windows:
             - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_2"
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
-            - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - claude --worktree tapai_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
         - tapai_cc_3:
-            - sleep 118
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_3"
+            - sleep 39
             - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_3
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/tapai_cc_3/access.json ~/.claude/channels/telegram/access.json
@@ -146,10 +156,11 @@ windows:
             - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_3"
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
-            - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - claude --worktree tapai_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
         - tapai_cc_4:
-            - sleep 136
+            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_4"
+            - sleep 61
             - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_4
             - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
             - ensure_file /tmp/claude_telegram_sessions/tapai_cc_4/access.json ~/.claude/channels/telegram/access.json
@@ -157,7 +168,7 @@ windows:
             - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_4"
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/tapai
-            - claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - claude --worktree tapai_cc_4 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
   - monitor:
       layout: tiled
