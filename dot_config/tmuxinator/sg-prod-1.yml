@@ -34,7 +34,7 @@ windows:
         - acap-5:
             - cd ~/acap
 
-  - sg-prod-1_CCs:
+  - sg-1_CCs:
       layout: tiled
       panes:
         - acap_cc_1:
@@ -81,94 +81,28 @@ windows:
             - claude --worktree alpha_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
 
-  - acap-admin_CCs:
+  - acap_CCs:
       layout: tiled
       panes:
         - acap_cc_3:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t acap "tmux new -A -s cc_acap_cc_3"
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_3
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_3/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc3_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_3"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree acap_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
+            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_3 acap_cc_3 'op://ACap/Telegram Bot - acap_cc3_bot/credential' acap
         - acap_cc_4:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t acap "tmux new -A -s cc_acap_cc_4"
-            - sleep 17
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_4
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_4/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc4_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_4"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree acap_cc_4 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
+            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_4 acap_cc_4 'op://ACap/Telegram Bot - acap_cc4_bot/credential' acap 17
         - alpha_cc_3:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t acap "tmux new -A -s cc_alpha_cc_3"
-            - sleep 170
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_7
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_7/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc7_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_7"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree alpha_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - ~/.config/tmuxinator/start-remote-cc.sh acap alpha_cc_3 acap_cc_7 'op://ACap/Telegram Bot - acap_cc7_bot/credential' acap 170
 
 
-  - Tapai-CCs:
+  - tapai-CCs:
       layout: tiled
       panes:
         - tapai_cc_1:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_1"
-            - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_1
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/tapai_cc_1/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://Tapai/Telegram Bot - tapai_cc1_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_1"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/tapai
-            - claude --worktree tapai_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
+            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_1 tapai_cc_1 'op://Tapai/Telegram Bot - tapai_cc1_bot/credential' tapai
         - tapai_cc_2:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_2"
-            - sleep 17
-            - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_2
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/tapai_cc_2/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://Tapai/Telegram Bot - tapai_cc2_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_2"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/tapai
-            - claude --worktree tapai_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
+            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_2 tapai_cc_2 'op://Tapai/Telegram Bot - tapai_cc2_bot/credential' tapai 17
         - tapai_cc_3:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_3"
-            - sleep 39
-            - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_3
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/tapai_cc_3/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://Tapai/Telegram Bot - tapai_cc3_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_3"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/tapai
-            - claude --worktree tapai_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
+            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_3 tapai_cc_3 'op://Tapai/Telegram Bot - tapai_cc3_bot/credential' tapai 39
         - tapai_cc_4:
-            - autossh -M 0 -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t tapai "tmux new -A -s cc_tapai_cc_4"
-            - sleep 61
-            - mkdir -p /tmp/claude_telegram_sessions/tapai_cc_4
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/tapai_cc_4/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://Tapai/Telegram Bot - tapai_cc4_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/tapai_cc_4"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/tapai
-            - claude --worktree tapai_cc_4 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_4 tapai_cc_4 'op://Tapai/Telegram Bot - tapai_cc4_bot/credential' tapai 61
 
   - monitor:
       layout: tiled
