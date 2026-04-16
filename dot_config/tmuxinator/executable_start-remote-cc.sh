@@ -25,7 +25,7 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exit 0
 fi
 
-tmux new-session -d -s "$SESSION"
+tmux -u new-session -d -s "$SESSION"
 
 if [ "$SLEEP_DELAY" -gt 0 ] 2>/dev/null; then
     tmux send-keys -t "$SESSION" "sleep $SLEEP_DELAY" Enter
@@ -43,7 +43,7 @@ REMOTE
 
 # Phase 2: Attach to remote tmux session with auto-reconnect loop
 while true; do
-    ssh -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t "$HOST" "tmux attach -t $SESSION"
+    ssh -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -t "$HOST" "tmux -u attach -t $SESSION"
     echo "SSH disconnected. Reconnecting in 5s..."
     sleep 5
 done
