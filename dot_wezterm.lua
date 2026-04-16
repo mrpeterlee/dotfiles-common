@@ -1,36 +1,38 @@
--- WezTerm configuration
--- Managed by chezmoi
-
 local wezterm = require("wezterm")
 local config = wezterm.config_builder()
 
+local is_windows = wezterm.target_triple:find("windows") ~= nil
+local is_darwin = wezterm.target_triple:find("darwin") ~= nil
+
 -- Font and display settings
 config.font = wezterm.font("CaskaydiaCove Nerd Font")
-config.font_size = 11
+config.font_size = 13
 config.max_fps = 240
 
-{{- if .isWindows }}
--- Windows: Launch into conda environment with clink
-config.default_prog = {
-    "cmd.exe",
-    "/s",
-    "/k",
-    "d:\\tool\\conda\\Scripts\\activate.bat d:\\tool\\conda & conda activate paper & d:\\lab\\paper\\winclient\\bin\\clink\\clink_x64.exe inject --profile d:\\home\\peter\\.clink",
-}
-{{- else if .isDarwin }}
--- macOS: Use Homebrew zsh
-config.default_prog = { "/opt/homebrew/bin/zsh", "-l" }
-{{- else }}
--- Linux: Use system zsh
-config.default_prog = { "/usr/bin/zsh", "-l" }
-{{- end }}
+if is_windows then
+    config.default_prog = {
+        "cmd.exe",
+        "/s",
+        "/k",
+        "d:\\tool\\conda\\Scripts\\activate.bat d:\\tool\\conda & conda activate paper & d:\\lab\\paper\\winclient\\bin\\clink\\clink_x64.exe inject --profile d:\\home\\peter\\.clink",
+    }
+elseif is_darwin then
+    config.default_prog = { "/opt/homebrew/bin/zsh", "-l" }
+else
+    config.default_prog = { "/usr/bin/zsh", "-l" }
+end
+
+-- Disable kitty keyboard protocol so that nvim (via tmux passthrough) cannot
+-- switch WezTerm into CSI-u encoding, which breaks tmux's traditional bindings
+config.enable_kitty_keyboard = false
+config.enable_csi_u_key_encoding = false
 
 -- Window appearance
 config.window_decorations = "RESIZE"
 config.window_background_opacity = 0.9
-{{- if .isDarwin }}
-config.macos_window_background_blur = 10
-{{- end }}
+if is_darwin then
+    config.macos_window_background_blur = 10
+end
 config.window_close_confirmation = "NeverPrompt"
 config.enable_tab_bar = false
 config.enable_scroll_bar = true
@@ -48,12 +50,9 @@ config.mouse_bindings = {
 
 -- Key bindings
 config.keys = {
-    -- Paste from clipboard
     { key = "v", mods = "CTRL", action = wezterm.action.PasteFrom("Clipboard") },
-    -- Font size controls
     { key = "+", mods = "ALT", action = wezterm.action.IncreaseFontSize },
     { key = "=", mods = "ALT", action = wezterm.action.DecreaseFontSize },
-    -- Fullscreen toggle
     { key = "n", mods = "CTRL", action = wezterm.action.ToggleFullScreen },
 }
 
