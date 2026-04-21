@@ -26,17 +26,17 @@ windows:
       layout: even-horizontal
       panes:
         - acap_cc_1:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_1 acap_cc_1 'op://ACap/Telegram Bot - acap_cc1_bot/credential' acap
+            - start-remote-cc.sh acap acap_cc_1 acap_cc_1 'op://ACap/Telegram Bot - acap_cc1_bot/credential' acap
         - acap_cc_2:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_2 acap_cc_2 'op://ACap/Telegram Bot - acap_cc2_bot/credential' acap 17
+            - start-remote-cc.sh acap acap_cc_2 acap_cc_2 'op://ACap/Telegram Bot - acap_cc2_bot/credential' acap 17
 
   - acap_cc_3&4(EC2):
       layout: even-horizontal
       panes:
         - acap_cc_3:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_3 acap_cc_3 'op://ACap/Telegram Bot - acap_cc3_bot/credential' acap 39
+            - start-remote-cc.sh acap acap_cc_3 acap_cc_3 'op://ACap/Telegram Bot - acap_cc3_bot/credential' acap 39
         - acap_cc_4:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_4 acap_cc_4 'op://ACap/Telegram Bot - acap_cc4_bot/credential' acap 61
+            - start-remote-cc.sh acap acap_cc_4 acap_cc_4 'op://ACap/Telegram Bot - acap_cc4_bot/credential' acap 61
 
   - alpha_cc_1&2(SG):
       layout: even-horizontal
@@ -84,17 +84,17 @@ windows:
       layout: even-horizontal
       panes:
         - tapai_cc_1:
-            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_1 tapai_cc_1 'op://Tapai/Telegram Bot - tapai_cc1_bot/credential' tapai
+            - start-remote-cc.sh tapai tapai_cc_1 tapai_cc_1 'op://Tapai/Telegram Bot - tapai_cc1_bot/credential' tapai
         - tapai_cc_2:
-            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_2 tapai_cc_2 'op://Tapai/Telegram Bot - tapai_cc2_bot/credential' tapai 17
+            - start-remote-cc.sh tapai tapai_cc_2 tapai_cc_2 'op://Tapai/Telegram Bot - tapai_cc2_bot/credential' tapai 17
 
   - tapai_cc_3&4(EC2):
       layout: even-horizontal
       panes:
         - tapai_cc_3:
-            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_3 tapai_cc_3 'op://Tapai/Telegram Bot - tapai_cc3_bot/credential' tapai 39
+            - start-remote-cc.sh tapai tapai_cc_3 tapai_cc_3 'op://Tapai/Telegram Bot - tapai_cc3_bot/credential' tapai 39
         - tapai_cc_4:
-            - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_4 tapai_cc_4 'op://Tapai/Telegram Bot - tapai_cc4_bot/credential' tapai 61
+            - start-remote-cc.sh tapai tapai_cc_4 tapai_cc_4 'op://Tapai/Telegram Bot - tapai_cc4_bot/credential' tapai 61
 
   - monitor:
       layout: tiled
