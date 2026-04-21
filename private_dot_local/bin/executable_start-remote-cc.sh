@@ -47,7 +47,7 @@ nohup bash -c "
     sleep $POST_DELAY
     tmux send-keys -t '$SESSION' 'Always respond to me in Telegram' Enter
     sleep 5
-    tmux send-keys -t '$SESSION' '/loop cron 0,30 * * * * — Every 30 minutes, review all current tasks and classify them as completed, ongoing, or pending. Completed tasks are closed and must never be executed again. Ongoing tasks must be checked for latest status using cli, Playwright MCP or RDP where applicable. Pending tasks are eligible to start only if there are zero ongoing tasks. When zero ongoing tasks remain, start pending tasks according to their assigned priority sequence.' Enter
+    tmux send-keys -t '$SESSION' '/loop cron 0,30 * * * * — Every 30 minutes, review all tasks, mark completed as permanently closed, actively progress or verify ongoing tasks via CLI/Playwright MCP/RDP as applicable, and only when no ongoing task remains immediately start the highest-priority pending task; YOU MUST STAY SILENT unless there is a completion, blocker, failure, or true need for human input.' Enter
     sleep 1
     tmux send-keys -t '$SESSION' Enter
 " >/dev/null 2>&1 </dev/null &
