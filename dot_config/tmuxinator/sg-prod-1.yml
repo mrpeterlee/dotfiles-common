@@ -22,39 +22,23 @@ windows:
         - acap-3:
             - cd ~/acap
 
-  - ACap-A(SG):
+  - acap_cc_1&2(EC2):
       layout: even-horizontal
       panes:
         - acap_cc_1:
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_1
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_1/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc1_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_1"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree acap_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
-
+            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_1 acap_cc_1 'op://ACap/Telegram Bot - acap_cc1_bot/credential' acap
         - acap_cc_2:
-            - sleep 28
-            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_2
-            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
-            - ensure_file /tmp/claude_telegram_sessions/acap_cc_2/access.json ~/.claude/channels/telegram/access.json
-            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc2_bot/credential')"
-            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_2"
-            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
-            - cd ~/acap
-            - claude --worktree acap_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
+            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_2 acap_cc_2 'op://ACap/Telegram Bot - acap_cc2_bot/credential' acap 17
 
-  - Acap-B(EC2):
+  - acap_cc_3&4(EC2):
       layout: even-horizontal
       panes:
         - acap_cc_3:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_3 acap_cc_3 'op://ACap/Telegram Bot - acap_cc3_bot/credential' acap
+            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_3 acap_cc_3 'op://ACap/Telegram Bot - acap_cc3_bot/credential' acap 39
         - acap_cc_4:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_4 acap_cc_4 'op://ACap/Telegram Bot - acap_cc4_bot/credential' acap 17
+            - ~/.config/tmuxinator/start-remote-cc.sh acap acap_cc_4 acap_cc_4 'op://ACap/Telegram Bot - acap_cc4_bot/credential' acap 61
 
-  - Alpha-A(SG):
+  - alpha_cc_1&2(SG):
       layout: even-horizontal
       panes:
         - alpha_cc_1:
@@ -66,6 +50,7 @@ windows:
             - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_5"
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/alpha
+            - '(sleep 30 && tmux send-keys -t "$TMUX_PANE" "Always respond to me in Telegram" Enter && sleep 5 && tmux send-keys -t "$TMUX_PANE" "/loop cron 0,30 * * * * — Every 30 minutes, review all current tasks and classify them as completed, ongoing, or pending. Completed tasks are closed and must never be executed again. Ongoing tasks must be checked for latest status using cli, Playwright MCP or RDP where applicable. Pending tasks are eligible to start only if there are zero ongoing tasks. When zero ongoing tasks remain, start pending tasks according to their assigned priority sequence." Enter && sleep 1 && tmux send-keys -t "$TMUX_PANE" Enter) >/dev/null 2>&1 &'
             - claude --worktree alpha_cc_1 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
         - alpha_cc_2:
@@ -77,15 +62,25 @@ windows:
             - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_6"
             - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
             - cd ~/alpha
+            - '(sleep 30 && tmux send-keys -t "$TMUX_PANE" "Always respond to me in Telegram" Enter && sleep 5 && tmux send-keys -t "$TMUX_PANE" "/loop cron 0,30 * * * * — Every 30 minutes, review all current tasks and classify them as completed, ongoing, or pending. Completed tasks are closed and must never be executed again. Ongoing tasks must be checked for latest status using cli, Playwright MCP or RDP where applicable. Pending tasks are eligible to start only if there are zero ongoing tasks. When zero ongoing tasks remain, start pending tasks according to their assigned priority sequence." Enter && sleep 1 && tmux send-keys -t "$TMUX_PANE" Enter) >/dev/null 2>&1 &'
             - claude --worktree alpha_cc_2 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
-  - Alpha-B(EC2):
+  - alpha_cc_3(SG):
       layout: even-horizontal
       panes:
         - alpha_cc_3:
-            - ~/.config/tmuxinator/start-remote-cc.sh acap alpha_cc_3 acap_cc_7 'op://ACap/Telegram Bot - acap_cc7_bot/credential' acap 170
+            - sleep 170
+            - mkdir -p /tmp/claude_telegram_sessions/acap_cc_7
+            - ensure_file() { local dst="$1" src="$2"; if [[ ! -f "$dst" ]]; then cp "$src" "$dst"; fi }
+            - ensure_file /tmp/claude_telegram_sessions/acap_cc_7/access.json ~/.claude/channels/telegram/access.json
+            - export TELEGRAM_BOT_TOKEN="$(op read 'op://ACap/Telegram Bot - acap_cc7_bot/credential')"
+            - export TELEGRAM_STATE_DIR="/tmp/claude_telegram_sessions/acap_cc_7"
+            - sleep 1 && export BW_SESSION=$(bw unlock "$(op read 'op://Tapai/Bitwarden/password')" --raw)
+            - cd ~/alpha
+            - '(sleep 30 && tmux send-keys -t "$TMUX_PANE" "Always respond to me in Telegram" Enter && sleep 5 && tmux send-keys -t "$TMUX_PANE" "/loop cron 0,30 * * * * — Every 30 minutes, review all current tasks and classify them as completed, ongoing, or pending. Completed tasks are closed and must never be executed again. Ongoing tasks must be checked for latest status using cli, Playwright MCP or RDP where applicable. Pending tasks are eligible to start only if there are zero ongoing tasks. When zero ongoing tasks remain, start pending tasks according to their assigned priority sequence." Enter && sleep 1 && tmux send-keys -t "$TMUX_PANE" Enter) >/dev/null 2>&1 &'
+            - claude --worktree alpha_cc_3 --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 
-  - Tapai-A(EC2):
+  - tapai_cc_1&2(EC2):
       layout: even-horizontal
       panes:
         - tapai_cc_1:
@@ -93,7 +88,7 @@ windows:
         - tapai_cc_2:
             - ~/.config/tmuxinator/start-remote-cc.sh tapai tapai_cc_2 tapai_cc_2 'op://Tapai/Telegram Bot - tapai_cc2_bot/credential' tapai 17
 
-  - Tapai-B(EC2):
+  - tapai_cc_3&4(EC2):
       layout: even-horizontal
       panes:
         - tapai_cc_3:

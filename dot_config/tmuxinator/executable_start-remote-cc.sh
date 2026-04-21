@@ -39,6 +39,19 @@ tmux send-keys -t "$SESSION" "export TELEGRAM_STATE_DIR=/tmp/claude_telegram_ses
 tmux send-keys -t "$SESSION" "sleep 1 && export BW_SESSION=\$(bw unlock \"\$(op read 'op://Tapai/Bitwarden/password')\" --raw)" Enter
 tmux send-keys -t "$SESSION" "cd ~/${WORK_DIR}" Enter
 tmux send-keys -t "$SESSION" "claude --worktree ${WORKTREE} --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions" Enter
+
+# After claude is up, send initial prompts (channel routing + periodic progress loop).
+# Detached so it survives this SSH session closing.
+POST_DELAY=$((SLEEP_DELAY + 30))
+nohup bash -c "
+    sleep $POST_DELAY
+    tmux send-keys -t '$SESSION' 'Always respond to me in Telegram' Enter
+    sleep 5
+    tmux send-keys -t '$SESSION' '/loop cron 0,30 * * * * — Every 30 minutes, review all current tasks and classify them as completed, ongoing, or pending. Completed tasks are closed and must never be executed again. Ongoing tasks must be checked for latest status using cli, Playwright MCP or RDP where applicable. Pending tasks are eligible to start only if there are zero ongoing tasks. When zero ongoing tasks remain, start pending tasks according to their assigned priority sequence.' Enter
+    sleep 1
+    tmux send-keys -t '$SESSION' Enter
+" >/dev/null 2>&1 </dev/null &
+disown 2>/dev/null || true
 REMOTE
 
 # Phase 2: Attach to remote tmux session with auto-reconnect loop
