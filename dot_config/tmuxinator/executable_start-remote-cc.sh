@@ -36,7 +36,7 @@ tmux send-keys -t "$SESSION" "mkdir -p /tmp/claude_telegram_sessions/${STATE_DIR
 tmux send-keys -t "$SESSION" "test -f /tmp/claude_telegram_sessions/${STATE_DIR}/access.json || cp ~/.claude/channels/telegram/access.json /tmp/claude_telegram_sessions/${STATE_DIR}/access.json" Enter
 tmux send-keys -t "$SESSION" "export TELEGRAM_BOT_TOKEN=\$(op read '${OP_BOT_REF}')" Enter
 tmux send-keys -t "$SESSION" "export TELEGRAM_STATE_DIR=/tmp/claude_telegram_sessions/${STATE_DIR}" Enter
-tmux send-keys -t "$SESSION" "sleep 1 && export BW_SESSION=\$(bw unlock \"\$(op read 'op://Tapai/Bitwarden/password')\" --raw)" Enter
+tmux send-keys -t "$SESSION" "sleep 1 && _BW_PW=\$(op read 'op://Tapai/Bitwarden/password' 2>/dev/null) && command -v bw >/dev/null 2>&1 && export BW_SESSION=\$(bw unlock \"\$_BW_PW\" --raw); unset _BW_PW" Enter
 tmux send-keys -t "$SESSION" "cd ~/${WORK_DIR}" Enter
 tmux send-keys -t "$SESSION" "claude --worktree ${WORKTREE} --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions" Enter
 
