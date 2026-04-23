@@ -1,117 +1,92 @@
 # Dotfiles Repository (~/.files)
 
-This is a **chezmoi-managed dotfiles** repository with:
+This is the **common, org-agnostic baseline** of a chezmoi-managed
+dotfiles system. Per-org content lives in overlays that stack on
+top of this repo at apply time.
+
 - Cross-platform support (Linux, macOS, Windows/WSL)
-- 1Password integration for secrets management
+- chezmoi templates for machine-specific configuration
 - Graphite keyboard layout (not QWERTY)
-- Templates for machine-specific configuration
+- Overlay layering for organizational content (see
+  `docs/overlay-convention.md`)
 
 ## Verify Before Returning
 
-**Before returning any result to the user, CLAUDE MUST run and verify that the changes complete successfully and the outputs match expectations.** This means:
-- Run the relevant commands (`chezmoi apply`, `chezmoi diff`, shell source, etc.) after making changes
+**Before returning any result to the user, CLAUDE MUST run and verify
+that the changes complete successfully and the outputs match
+expectations.** This means:
+- Run the relevant commands (`chezmoi apply`, `chezmoi diff`, shell
+  source, etc.) after making changes
 - Inspect the actual output files to confirm they rendered correctly
-- Confirm environment variables are set, configs are valid, and no errors occurred
+- Confirm environment variables are set, configs are valid, and no
+  errors occurred
 - If verification fails, fix the issue and re-verify before responding
-- Never assume a change works — prove it
+- Never assume a change works -- prove it
 
-## Critical: Secrets Management
+## Overlay Model (Critical)
 
-**NEVER hardcode sensitive data in this repository.** All secrets are managed through 1Password.
+This repo is **org-agnostic**. It contains no vault names, no infra
+IPs, no org-specific email domains, no project-specific aliases.
+That content lives in **overlays** -- separate chezmoi source-state
+trees under `<org-repo>/dotfiles-overlay/` -- that are applied *after*
+this base repo.
 
-### 1Password Service Accounts
+An overlay's `.chezmoidata/overlay.yaml` defines:
 
-Three service accounts are configured in `~/.config/op/service-accounts.env` (local only, 600 perms, NOT in git). Both zsh and bash source this file automatically on shell start.
+- `vault:` -- the 1Password vault name the overlay consumes
+- `infra:` -- org-specific infra values (AWS IDs, VPN hosts, etc.)
 
-| Env Var | Vault | Scope |
-|---------|-------|-------|
-| `OP_SA_ACAP` | ACap | `~/acap`, acap openclaw in `~/.openclaws` |
-| `OP_SA_TAPAI` | Tapai | `~/tapai`, tapai openclaw in `~/.openclaws` |
-| `OP_SA_OPENCLAWS` | OpenClaws | all openclaws except xiong in `~/.openclaws` |
+Templates in the base repo MUST NOT reference `.vault` or org-specific
+values. If a template needs to call `onepasswordRead`, it belongs in
+an overlay, not in `.files`.
 
-`OP_SERVICE_ACCOUNT_TOKEN` defaults to `OP_SA_ACAP` on shell start.
+The `dots` CLI (Python/Click, part of the umbrella dotfiles-unification
+work) applies overlays sequentially in a deterministic order driven
+by the host's `host-role`. A per-host manifest tracks provenance so
+files that move out of an overlay get cleaned up on the next apply.
 
-**Switching accounts:**
-```bash
-op-use acap                        # switch active account to ACap
-op-use tapai                       # switch to Tapai
-op-use openclaws                   # switch to OpenClaws
-op-which                           # show which account is active
-op-with tapai read "op://..."      # run one op command with a specific account (without switching)
-```
+See `docs/overlay-convention.md` for the full model.
 
-**When reading secrets, use the correct vault for the context:**
-- Working in `~/acap` or acap openclaw → `op-use acap` (or already default)
-- Working in `~/tapai` or tapai openclaw → `op-use tapai`
-- Working with openclaws in `~/.openclaws` (except xiong) → `op-use openclaws`
+## Hygiene Gate
 
-### 1Password Vault Structure
+`tests/hygiene/test_no_org_plaintext.sh` scans the repo on every PR
+for banned organizational-plaintext patterns -- specific vault names,
+infra IPs, org email domains, bastion hostnames, etc. If you find
+yourself wanting to commit any of those to this repo, the content
+belongs in an overlay.
 
-| Vault | Item | Purpose |
-|-------|------|---------|
-| `ACap` | `Infrastructure` | All infrastructure secrets (IPs, hostnames, AWS, etc.) |
+When adding content here, ask: **"Would this work identically for
+an unrelated org or personal use?"** If no, it belongs in an overlay.
 
-### Reading Secrets
+## Secrets Management
 
-In `.chezmoi.toml.tmpl`:
-```go
-{{- $value := onepasswordRead "op://ACap/Infrastructure/field_name" -}}
-```
+**NEVER hardcode sensitive data in this repository.**
 
-In shell scripts (runtime):
-```bash
-op read "op://ACap/Infrastructure/field_name"
-```
+Base templates treat secrets abstractly -- they reference `.vault`
+(supplied by an overlay) and never hardcode a vault name. Reading
+the actual secrets is the overlay's responsibility.
 
-### Available Infrastructure Variables
-
-These are defined in `.chezmoi.toml.tmpl` and available in all `.tmpl` files:
+In an overlay template (NOT in base `.files`):
 
 ```go
-{{ .infra.aws_account_id }}      // AWS account ID
-{{ .infra.aws_route53_zone_id }} // Route53 hosted zone ID
-{{ .infra.aws_iam_role }}        // IAM role ARN
-{{ .infra.vpn_host }}            // VPN hostname
-{{ .infra.vpn_port }}            // VPN SSH port
-{{ .infra.vault_url }}           // HashiCorp Vault URL
-{{ .infra.docker_registry }}     // Docker registry hostname
-{{ .infra.internal_ip }}         // Internal server IP
-{{ .infra.internal_port }}       // Internal service port
-{{ .infra.base_domain }}         // Base domain for services
+{{- $value := onepasswordRead (printf "op://%s/Infrastructure/field_name" .vault) -}}
 ```
 
-### Adding New Secrets
+In shell scripts at runtime, use the `op` CLI with the active service
+account -- overlay-provided wrappers (like `op-use`, `op-with`) switch
+vaults. Those wrappers ship from their respective overlays, not from
+this base.
 
-When you need to add a new secret:
+### Without an overlay
 
-1. **Add to 1Password** (user action):
-   ```bash
-   op item edit Infrastructure --vault AstroCapital "new_field=value"
-   ```
+If no overlay is applied, chezmoi uses placeholder values from
+`.chezmoidata.yaml` and no `onepasswordRead` calls fire. This lets
+the base repo apply cleanly on a fresh machine with no org context.
 
-2. **Update `.chezmoi.toml.tmpl`**:
-   ```go
-   {{- $newField := "default-value" -}}
-   {{- if $opSignedIn -}}
-   {{-   $newField = onepasswordRead "op://AstroCapital/Infrastructure/new_field" -}}
-   {{- end -}}
+### Overlay-side naming conventions
 
-   # In [data.infra] section:
-   new_field = {{ $newField | quote }}
-   ```
-
-3. **Update `.chezmoidata.yaml`** (safe defaults):
-   ```yaml
-   infra:
-     new_field: "placeholder-value"
-   ```
-
-4. **Use in templates**:
-   ```go
-   {{ .infra.new_field }}
-   ```
-
-### Naming Conventions
+When authoring templates inside an overlay, prefer these conventions
+for `infra.*` keys so overlays interoperate:
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -120,7 +95,7 @@ When you need to add a new secret:
 | URLs | `snake_case` with `_url` suffix | `vault_url`, `api_url` |
 | AWS IDs | `aws_` prefix | `aws_account_id`, `aws_route53_zone_id` |
 | IPs | `_ip` suffix | `internal_ip`, `gateway_ip` |
-| Credentials | Use 1Password references directly, don't store in chezmoi |
+| Credentials | Use `onepasswordRead` at render time; don't persist in chezmoi data |
 
 ## File Conventions
 
@@ -128,7 +103,7 @@ When you need to add a new secret:
 
 | Prefix/Suffix | Meaning |
 |---------------|---------|
-| `dot_` | File starts with `.` (e.g., `dot_zshrc` → `.zshrc`) |
+| `dot_` | File starts with `.` (e.g., `dot_zshrc` -> `.zshrc`) |
 | `private_` | File has restricted permissions (600) |
 | `executable_` | File is executable (755) |
 | `.tmpl` | File is a Go template |
@@ -147,7 +122,7 @@ Files ending in `.tmpl` are processed by chezmoi. Common patterns:
 # Linux specific
 {{ end }}
 
-// Using infrastructure secrets
+// Overlay-supplied values (only valid in overlay templates)
 ssh -p {{ .infra.vpn_port }} user@{{ .infra.vpn_host }}
 
 // String operations
@@ -166,42 +141,57 @@ chezmoi add ~/.config/app/config.toml
 mv dot_config/app/config.toml dot_config/app/config.toml.tmpl
 ```
 
+If the file contains org-specific values, it belongs in an **overlay**
+source-state tree, not in this base repo.
+
 ### Testing Templates
 
 ```bash
 # Test template rendering
-chezmoi execute-template '{{ .infra.vpn_host }}'
+chezmoi execute-template '{{ .chezmoi.os }}'
 
 # Preview what would be written
 chezmoi diff
 
 # Apply changes
 chezmoi apply
+
+# Dry-run into a throwaway destination
+chezmoi apply --dry-run --source=. --destination=/tmp/render-test
 ```
 
-### Refreshing Secrets
+### Refreshing prompts / data
 
 ```bash
-# Re-read from 1Password
 chezmoi init --force
 chezmoi apply
 ```
 
 ## Security Guidelines
 
-1. **Never commit real values** - Use templates with 1Password references
-2. **Check before committing** - Run `git diff` and look for IPs, passwords, tokens
-3. **Use .chezmoidata.yaml for defaults** - Safe placeholder values only
-4. **Grep for sensitive patterns** before pushing:
+1. **Never commit real values** -- base templates stay abstract;
+   overlays supply the vault name via `.vault`
+2. **Check before committing** -- run `git diff` and look for IPs,
+   passwords, tokens, org-specific hostnames
+3. **Use `.chezmoidata.yaml` for defaults** -- safe placeholder
+   values only
+4. **The hygiene gate is authoritative** --
+   `tests/hygiene/test_no_org_plaintext.sh` enumerates the patterns
+   that must not appear in base. CI runs this on every PR. Run it
+   locally before pushing:
    ```bash
-   git diff --cached | grep -E "(password|secret|token|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
+   ./tests/hygiene/test_no_org_plaintext.sh
+   ```
+5. **Grep for sensitive patterns** before pushing:
+   ```bash
+   git diff --cached | grep -E '(password|secret|token|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)'
    ```
 
 ## Useful Commands
 
 ```bash
-# CLI wrapper
-./cli backup|restore|conda|status|help
+# CLI wrapper (base)
+./cli backup|restore|apply|update|conda|status|help
 
 # Chezmoi operations
 chezmoi diff              # Preview changes
@@ -210,13 +200,13 @@ chezmoi edit ~/.zshrc     # Edit managed file
 chezmoi data              # Show all template data
 chezmoi doctor            # Diagnose issues
 
-# 1Password operations
-op-use acap|tapai|openclaws       # Switch active service account
-op-which                          # Show active account
-op-with acap op read "op://..."   # One-off command with specific account
-op item list --vault ACap         # List items in ACap vault
-op item get Infrastructure --vault ACap  # View item
+# Hygiene / CI gates
+./tests/hygiene/test_no_org_plaintext.sh     # banned-pattern scan
 ```
+
+Overlay-provided commands (`op-use`, `op-with`, project-specific
+wrappers) come from whichever overlay the host applies, not from
+this base.
 
 ## Windows Environment Model
 
@@ -224,29 +214,34 @@ Two environments, one repo:
 
 | Environment | Purpose | Tools |
 |-------------|---------|-------|
-| **cmd/PowerShell** | Minimal Claude Code host | **winget:** 1Password CLI, ripgrep, bat, zoxide, eza. **conda:** lazygit (`D:\tool\conda\envs\paper\Library\bin`). **system:** git, chezmoi. |
-| **WSL** | Full dev environment | Standard Linux — run `cli restore` inside WSL. Gets conda env, zsh, tmux, neovim, all terminal utilities. |
+| **cmd/PowerShell** | Minimal Claude Code host | **winget:** 1Password CLI, ripgrep, bat, zoxide, eza. **conda:** lazygit. **system:** git, chezmoi. |
+| **WSL** | Full dev environment | Standard Linux -- run `cli restore` inside WSL. Gets conda env, zsh, tmux, neovim, all terminal utilities. |
 
-The Windows side intentionally has no Neovim, Oh My Posh, fzf, fd, or delta. All dev tooling lives in WSL. Do not add dev tools to the Windows package list or PowerShell profile.
+The Windows side intentionally has no Neovim, Oh My Posh, fzf, fd,
+or delta. All dev tooling lives in WSL. Do not add dev tools to the
+Windows package list or PowerShell profile.
 
 ## Conda Environment Management
 
-The `cli conda` command manages a blue-green conda environment at `/opt/conda/envs/`. This is the primary development environment ("acap") containing Python, Node.js, Rust, and all project dependencies.
+The `cli conda` command manages a blue-green conda environment at
+`/opt/conda/envs/`. This is a shared development environment (`prod`)
+containing Python, Node.js, Rust, and common dev dependencies.
 
 ### Architecture
 
 ```
 /opt/conda/                              # miniconda base (system-wide)
 /opt/conda/envs/
-  acap-20260203-120000/                  # timestamped actual env
-  acap-20260210-040000/                  # newer env
-  prod -> acap-20260210-040000           # symlink (atomic swap)
+  prod-20260203-120000/                  # timestamped actual env
+  prod-20260210-040000/                  # newer env
+  prod -> prod-20260210-040000           # symlink (atomic swap)
   .prod-previous                         # records prior target for rollback
 ```
 
-Shell activation: `conda activate /opt/conda/envs/prod` (in each user's `.bashrc`).
-The symlink lets builds complete and validate before activation takes effect.
-The env is **shared across all users** on a host — there is one `prod` symlink, not per-user.
+Shell activation: `conda activate /opt/conda/envs/prod` (in each
+user's `.bashrc`). The symlink lets builds complete and validate
+before activation takes effect. The env is **shared across all
+users** on a host -- there is one `prod` symlink, not per-user.
 
 ### Commands
 
@@ -255,44 +250,52 @@ The env is **shared across all users** on a host — there is one `prod` symlink
 | `cli conda build` | Create a new timestamped env, validate it, atomically swap the `prod` symlink, clean up envs older than 30 days |
 | `cli conda status` | Show current `prod` target, Python/Node/uv versions, list all available envs |
 | `cli conda rollback` | Revert `prod` symlink to the previously recorded env |
-| `cli conda nuke` | Remove **all** `acap-*` envs and the `prod` symlink, then rebuild from scratch |
+| `cli conda nuke` | Remove **all** timestamped envs and the `prod` symlink, then rebuild from scratch |
 | `cli conda install-timer` | Install a systemd user timer for weekly auto-rebuild (Sun 04:00) |
 
 ### What gets installed
 
 The build pipeline runs in this order:
 
-1. **Conda packages** (`env/config/conda-packages.txt`) -- `conda create -p <prefix> -c conda-forge --channel-priority strict`
-   Core runtime: `python=3.11`, `nodejs`, `rust`, `uv`. Terminal utilities: `bat`, `ripgrep`, `fzf`, `zoxide`, `git-delta`, `eza`, `lazygit`, `tmux`, `neovim`. Plus scientific/dev/finance packages.
+1. **Conda packages** (`env/config/conda-packages.txt`) --
+   `conda create -p <prefix> -c conda-forge --channel-priority strict`.
+   Core runtime: `python=3.11`, `nodejs`, `rust`, `uv`. Terminal
+   utilities: `bat`, `ripgrep`, `fzf`, `zoxide`, `git-delta`, `eza`,
+   `lazygit`, `tmux`, `neovim`.
 
-2. **Pip packages** (`env/config/pip-packages.txt`) -- `uv pip install --python <prefix>/bin/python`
-   Packages that aren't on conda-forge (finance APIs, quant libs, etc.). Also includes `awscli`.
+2. **Pip packages** (`env/config/pip-packages.txt`) --
+   `uv pip install --python <prefix>/bin/python`.
 
-3. **NPM tools** (`env/config/npm-tools.txt`) -- `npm install -g` within the env
-   `@openai/codex`, `wrangler`.
+3. **NPM tools** (`env/config/npm-tools.txt`) -- `npm install -g`
+   within the env.
 
-4. **Custom-index pip packages** (`env/config/pip-custom-indexes.sh`)
-   Bloomberg `blpapi` from the private Bloomberg pip index (fails gracefully outside the Bloomberg network).
+4. **Standalone CLI binaries** (`env/lib/cli-tools.sh`) -- downloaded
+   into `<prefix>/bin/`: `gh`, `kubectl`, `argocd`, `helm`, `yazi`,
+   `sesh`, `twm`, `oh-my-posh`.
 
-5. **Standalone CLI binaries** (`env/lib/cli-tools.sh`) -- downloaded into `<prefix>/bin/`
-   `gh`, `kubectl`, `argocd`, `helm`, `aliyun`, `yazi`, `sesh`, `twm`, `oh-my-posh`.
+5. **System-level tools** -- installed outside the env, available on
+   system PATH: `op` (1Password CLI), `claude` (Claude Code).
 
-6. **System-level tools** -- installed outside the env, available on system PATH
-   `op` (1Password CLI, installed automatically by `cli restore`), `claude` (Claude Code, native standalone binary at `~/.local/bin/claude`).
-
+Org-specific pip indexes or private channels are layered in via
+overlay scripts, not by this base repo.
 
 ### Adding or removing packages
 
-- **Conda package**: edit `env/config/conda-packages.txt`, one package per line.
-- **Pip package**: edit `env/config/pip-packages.txt`, one package per line.
-- **NPM tool**: edit `env/config/npm-tools.txt`, one scoped-or-bare package per line.
-- **Standalone binary**: add an `_install_<name>` function to `env/lib/cli-tools.sh` and call it from `install_cli_tools`.
+- **Conda**: edit `env/config/conda-packages.txt`
+- **Pip**: edit `env/config/pip-packages.txt`
+- **NPM**: edit `env/config/npm-tools.txt`
+- **Standalone binary**: add an `_install_<name>` function to
+  `env/lib/cli-tools.sh` and call it from `install_cli_tools`
 
-After editing, run `cli conda build` to create a fresh env with the changes. The previous env remains available for rollback.
+After editing, run `cli conda build` to create a fresh env with the
+changes. The previous env remains available for rollback.
 
 ### Cleanup policy
 
-After every successful build, `_env_cleanup` (in `cli`) removes `acap-*` directories older than 30 days. The current `prod` target and the previous env (for rollback) are always preserved regardless of age.
+After every successful build, `_env_cleanup` (in `cli`) removes
+timestamped env directories older than 30 days. The current `prod`
+target and the previous env (for rollback) are always preserved
+regardless of age.
 
 ### Validation
 
@@ -300,72 +303,53 @@ After every successful build, `_env_cleanup` (in `cli`) removes `acap-*` directo
 - Python is 3.11.x
 - Critical imports: `pandas`, `numpy`, `scipy`, `sqlalchemy`, `loguru`
 - `uv`, `node` binaries present
-- NPM tools present (`codex`, `wrangler`)
-- Terminal utilities present (`bat`, `rg`, `fzf`, `zoxide`, `delta`, `eza`, `lazygit`, `tmux`, `nvim`)
-- Standalone CLI tools present (`gh`, `kubectl`, `argocd`, `helm`, `aliyun`, `aws`, `yazi`, `sesh`, `twm`, `oh-my-posh`)
+- NPM tools present
+- Terminal utilities present (`bat`, `rg`, `fzf`, `zoxide`, `delta`,
+  `eza`, `lazygit`, `tmux`, `nvim`)
+- Standalone CLI tools present (`gh`, `kubectl`, `argocd`, `helm`,
+  `yazi`, `sesh`, `twm`, `oh-my-posh`)
 - `op` available on system PATH
 
-If validation fails, the new env is deleted and the `prod` symlink is **not** swapped.
-
-### Key files
-
-```
-~/.files/
-  cli                                    # main entry point — cmd_env and _env_cleanup live here
-  env/
-    config/
-      conda-packages.txt                 # conda-forge packages
-      pip-packages.txt                   # pip packages (installed via uv)
-      npm-tools.txt                      # npm global tools
-      pip-custom-indexes.sh              # private-index pip installs
-    lib/
-      build.sh                           # build_env() — orchestrates install steps
-      validate.sh                        # validate_env() — post-build checks
-      cli-tools.sh                       # install_cli_tools() — standalone binary downloads
-    auto-upgrade.service                 # systemd oneshot for cli conda build
-    auto-upgrade.timer                   # weekly timer (Sun 04:00)
-    deploy-host.sh                       # full host deployment (miniconda + env + user bashrc)
-    setup-bashrc.sh                      # inject conda init block into each user's bashrc
-```
+If validation fails, the new env is deleted and the `prod` symlink
+is **not** swapped.
 
 ### Multi-host deployment
 
-The env is shared by all users on a given host. `/opt` must be owned by `peter`.
+The env is shared by all users on a given host. `/opt` must be owned
+by the primary operator account.
 
-To deploy to a remote host (e.g. `acap-admin` at `18.138.191.35`):
+To deploy to a remote host:
 
 ```bash
-# 1. Sync dotfiles to remote
-rsync -avz --delete --exclude='.git' ~/.files/ acap-admin:~/.files/
+# 1. Sync dotfiles to remote (overlay repos sync separately)
+rsync -avz --delete --exclude='.git' ~/.files/ <remote>:~/.files/
 
-# 2. Run deploy (installs miniconda if missing, builds env, fixes permissions)
-ssh acap-admin 'export CONDA_DEFAULT_ENV="" CONDA_PREFIX="" CONDA_SHLVL=0 \
+# 2. Run deploy (installs miniconda if missing, builds env)
+ssh <remote> 'export CONDA_DEFAULT_ENV="" CONDA_PREFIX="" CONDA_SHLVL=0 \
   PATH="/opt/conda/bin:$PATH" && bash ~/.files/env/deploy-host.sh'
 
 # 3. Set up user bashrc files (requires sudo)
-ssh acap-admin 'echo "<password>" | sudo -S true 2>/dev/null \
-  && bash ~/.files/env/setup-bashrc.sh'
+ssh <remote> 'sudo bash ~/.files/env/setup-bashrc.sh'
 ```
 
-`deploy-host.sh` is safe to re-run: it skips miniconda install if `/opt/conda` already exists.
-`setup-bashrc.sh` is idempotent: it only appends the conda block if not already present.
+`deploy-host.sh` is safe to re-run: it skips miniconda install if
+`/opt/conda` already exists. `setup-bashrc.sh` is idempotent.
 
 ## AI Agent Configs
 
-Agent configs (Claude Code, Codex, OpenClaw) have moved to `~/.agents` (separate repo).
-- `~/.agents/cli install` — install all agent configs
-- `~/.agents/cli snapshot` — capture evolved workspace files
-- The deploy script (`.chezmoiscripts/run_after_60-deploy-ai-agents.sh.tmpl`) triggers `~/.agents/cli install` automatically.
+Agent configs (Claude Code, Codex, OpenClaw) have moved to `~/.agents`
+(separate repo).
 
-## gstack
-
-Use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
-
-Available skills: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/cso`, `/autoplan`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.
+- `~/.agents/cli install` -- install all agent configs
+- `~/.agents/cli snapshot` -- capture evolved workspace files
+- The deploy script
+  (`.chezmoiscripts/run_after_60-deploy-ai-agents.sh.tmpl`) triggers
+  `~/.agents/cli install` automatically.
 
 ## Related Documentation
 
-- `README.md` - User-facing documentation
-- `docs/secrets-management.md` - Detailed secrets guide
-- `.chezmoi.toml.tmpl` - Template configuration source
-- `.chezmoidata.yaml` - Default values reference
+- `README.md` -- user-facing documentation
+- `docs/overlay-convention.md` -- overlay layering model
+- `docs/secrets-management.md` -- detailed secrets guide
+- `.chezmoi.toml.tmpl` -- template configuration source
+- `.chezmoidata.yaml` -- default values reference
