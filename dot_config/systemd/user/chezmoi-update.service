@@ -1,0 +1,12 @@
+[Unit]
+Description=Pull dotfiles and apply chezmoi
+Documentation=https://www.chezmoi.io/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/chezmoi update
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

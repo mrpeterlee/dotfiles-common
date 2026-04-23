@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Reload systemd user units and enable the chezmoi-update timer.
+# Re-runs whenever the unit files below change (hashes embedded below).
+#
+# service: {{ include "dot_config/systemd/user/chezmoi-update.service" | sha256sum }}
+# timer:   {{ include "dot_config/systemd/user/chezmoi-update.timer" | sha256sum }}
+
+set -euo pipefail
+
+# Only act on Linux systems with systemd user instances.
+if ! command -v systemctl >/dev/null 2>&1; then
+    exit 0
+fi
+if [ ! -d "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/systemd" ]; then
+    echo "systemd user instance not running; skipping chezmoi-update.timer enable" >&2
+    exit 0
+fi
+
+systemctl --user daemon-reload
+systemctl --user enable --now chezmoi-update.timer
