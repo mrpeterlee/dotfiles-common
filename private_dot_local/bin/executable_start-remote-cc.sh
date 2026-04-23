@@ -17,9 +17,10 @@ SLEEP_DELAY="${6:-0}"
 SESSION="cc_${WORKTREE}"
 
 # Boot prompt sent to claude after it starts. Override via CC_BOOT_PROMPT env var.
-# Default embeds "Always respond to me in Telegram" inside the /loop recurring body
-# so the preference is re-asserted on each cron fire (idempotent).
-BOOT_PROMPT="${CC_BOOT_PROMPT:-/loop cron 0,30 * * * * — Always respond to me in Telegram. Every 30 minutes, review all tasks, mark completed as permanently closed, actively progress or verify ongoing tasks via CLI/Playwright MCP/RDP as applicable, and only when no ongoing task remains immediately start the highest-priority pending task; YOU MUST STAY SILENT unless there is a completion, blocker, failure, or true need for human input.}"
+# Default delegates the full operational spec to loop_prompt.md in the acap repo
+# so the spec can evolve without re-deploying this script; each cron tick re-reads
+# the file and executes its instructions.
+BOOT_PROMPT="${CC_BOOT_PROMPT:-/loop cron 0,30 * * * * — Re-read /home/peter/acap/ansible/roles/tmuxinator/loop_prompt.md each tick and execute its instructions.}"
 
 # Escape single quotes for safe embedding inside a single-quoted ssh arg:
 #   ' -> '\''
