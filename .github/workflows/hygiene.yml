@@ -42,9 +42,9 @@ jobs:
           # derived by the toml template from chezmoi's own runtime
           # detection — we only pre-supply the four prompted fields.
           chezmoi init --source=. --apply=false --force \
-            --promptString email=ci@example.com \
-            --promptString name="CI Runner" \
-            --promptString hostname=ci-runner \
-            --promptBool personal=false
+            --prompt-string email=ci@example.com \
+            --prompt-string name="CI Runner" \
+            --prompt-string hostname=ci-runner \
+            --prompt-bool personal=false
           chezmoi apply --dry-run --source=. --destination=/tmp/dryrun 2>&1 | tee /tmp/render/apply.log
           test "$(grep -c '^Error:' /tmp/render/apply.log)" = "0"
