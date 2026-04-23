@@ -36,6 +36,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/render
-          chezmoi execute-template --source=. < /dev/null > /tmp/render/execute.log 2>&1 || true
+          # Seed chezmoi's prompted data with CI fixtures so apply/init
+          # doesn't block on interactive prompts. OS flags (isLinux /
+          # isDarwin / isWindows / isWSL / pkgmgr / osid / arch) are
+          # derived by the toml template from chezmoi's own runtime
+          # detection — we only pre-supply the four prompted fields.
+          chezmoi init --source=. --apply=false --force \
+            --promptString email=ci@example.com \
+            --promptString name="CI Runner" \
+            --promptString hostname=ci-runner \
+            --promptBool personal=false
           chezmoi apply --dry-run --source=. --destination=/tmp/dryrun 2>&1 | tee /tmp/render/apply.log
           test "$(grep -c '^Error:' /tmp/render/apply.log)" = "0"
