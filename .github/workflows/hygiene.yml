@@ -35,15 +35,35 @@ jobs:
       - name: Render templates
         shell: bash
         run: |
-          mkdir -p /tmp/render
-          # Seed chezmoi's prompted data with CI fixtures so apply/init
-          # doesn't block on interactive prompts. OS flags (isLinux /
-          # isDarwin / isWindows / isWSL / pkgmgr / osid / arch) are
-          # derived by the toml template from chezmoi's own runtime
-          # detection — we only pre-supply the four prompted fields.
-          # --no-tty makes promptString/promptBool fall back to the default
-          # value defined in .chezmoi.toml.tmpl. That's `your-email@example.com`
-          # and `Your Name` after the org strip — fine for CI purposes.
-          chezmoi init --source=. --apply=false --force --no-tty
+          mkdir -p /tmp/render ~/.config/chezmoi
+          # Bypass `chezmoi init` entirely — the toml template uses
+          # promptStringOnce which chezmoi 2.70.2 can't be coerced into
+          # defaulting non-interactively (--no-tty + --prompt-string
+          # both fail). Pre-writing a minimal chezmoi.toml with all
+          # data fields the templates reference sidesteps init.
+          case "$RUNNER_OS" in
+            Linux)   OSID=linux;   PKG=apt;    ISL=true;  ISD=false; ISW=false;;
+            macOS)   OSID=darwin;  PKG=brew;   ISL=false; ISD=true;  ISW=false;;
+            Windows) OSID=windows; PKG=winget; ISL=false; ISD=false; ISW=true;;
+            *)       echo "Unsupported RUNNER_OS: $RUNNER_OS"; exit 1;;
+          esac
+          cat > ~/.config/chezmoi/chezmoi.toml <<EOF
+          sourceDir = "$PWD"
+
+          [data]
+              email = "ci@example.com"
+              name = "CI Runner"
+              hostname = "ci-runner"
+              personal = false
+              osid = "$OSID"
+              arch = "amd64"
+              isLinux = $ISL
+              isDarwin = $ISD
+              isWindows = $ISW
+              isWSL = false
+              pkgmgr = "$PKG"
+              hasOp = false
+              opSignedIn = false
+          EOF
           chezmoi apply --dry-run --source=. --destination=/tmp/dryrun 2>&1 | tee /tmp/render/apply.log
           test "$(grep -c '^Error:' /tmp/render/apply.log)" = "0"
