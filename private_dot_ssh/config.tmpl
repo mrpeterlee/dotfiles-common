@@ -1,67 +1,13 @@
-# SSH Config - managed by chezmoi
+# Base SSH client config. Per-org host lists live in overlays under
+# ~/.ssh/config.d/<org>-hosts.conf. The Include directive below pulls
+# them in if present.
 
+Include ~/.ssh/config.d/*.conf
+
+# Cross-platform defaults.
 Host *
-{{- if not .isWindows }}
-    ForwardX11 yes
-{{- end }}
     ServerAliveInterval 60
-    ServerAliveCountMax 60
-
-Host acap
-    HostName 18.138.191.35
-    User peter
-{{- if stat (joinPath .chezmoi.homeDir ".ssh/acap-admin_peter.pem") }}
-    IdentityFile ~/.ssh/acap-admin_peter.pem
-{{- else if stat (joinPath .chezmoi.homeDir ".ssh/acap-admin-key.pem") }}
-    IdentityFile ~/.ssh/acap-admin-key.pem
-{{- end }}
-
-# Host tapai-admin
-    # HostName 13.251.46.169
-    # User peter
-    # IdentityFile ~/.ssh/tapai-admin-ec2-peterlee.pem
-
-# Via acap jumphost
-Host tapai
-    HostName 13.251.46.169
-    User peter
-    IdentityFile ~/.ssh/tapai-admin_peter.pem
-{{- if ne .chezmoi.hostname "acap-admin" }}
-    ProxyJump acap
-{{- end }}
-
-Host sg-prod-1 sg
-    HostName sg-prod-1.acap.cc
-    Port 55555
-    User peter
-    IdentityFile ~/.ssh/sg-prod-1_peter
-
-Host sg-local
-    HostName 10.1.1.100
-    Port 22
-    User peter
-    IdentityFile ~/.ssh/sg-prod-1_peter
-
-Host cn-prod-1 cn
-    # HostName 100.64.0.3  # Tailscale mesh (GFW-proof)
-    HostName cn-prod-1.acap.cc
-    Port 55555
-    User peter
-    IdentityFile ~/.ssh/cn-prod-1_peter
-
-Host claw-peter
-    HostName sg.acap.cc
-    Port 55556
-    User claw-peter
-    IdentityFile ~/.ssh/claw-imac
-
-Host claw-toni
-    HostName sg.acap.cc
-    Port 55556
-    User claw-toni
-    IdentityFile ~/.ssh/claw-imac
-
-Host kayden
-    HostName 13.228.5.236
-    User kayden
-    IdentityFile ~/.ssh/kayden-key.pem
+    ServerAliveCountMax 3
+{{ if .isWindows -}}
+    ForwardX11 no
+{{ end -}}
