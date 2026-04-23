@@ -28,8 +28,8 @@ readonly EXCLUDE_DIRS=(
   '.git'
   'node_modules'
   '.venv'
-  'tests/hygiene/golden'
-  'docs'   # documentation of the convention; quotes vault/org names as examples
+  'hygiene'         # the hygiene tests themselves enumerate banned patterns by literal (basename match)
+  'docs'            # documentation of the convention; quotes vault/org names as examples
 )
 
 build_exclude_args() {
