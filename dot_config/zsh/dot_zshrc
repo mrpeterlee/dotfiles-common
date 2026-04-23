@@ -1,9 +1,5 @@
 #! /usr/bin/env zsh
-# @Author     : Peter Lee
-# @Email      : peter.lee@astrocapital.net
-# @Last Update: 2024-05-16 20:54:16 EDT
 # @Type       : lib
-# @Sensitivity: global_equities@astrocapital.net
 # @Platform   : any
 
 if [ -n "${ZSH_DEBUGRC+1}" ]; then
