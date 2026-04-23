@@ -41,10 +41,9 @@ jobs:
           # isDarwin / isWindows / isWSL / pkgmgr / osid / arch) are
           # derived by the toml template from chezmoi's own runtime
           # detection — we only pre-supply the four prompted fields.
-          chezmoi init --source=. --apply=false --force \
-            --prompt-string email=ci@example.com \
-            --prompt-string name="CI Runner" \
-            --prompt-string hostname=ci-runner \
-            --prompt-bool personal=false
+          # --no-tty makes promptString/promptBool fall back to the default
+          # value defined in .chezmoi.toml.tmpl. That's `your-email@example.com`
+          # and `Your Name` after the org strip — fine for CI purposes.
+          chezmoi init --source=. --apply=false --force --no-tty
           chezmoi apply --dry-run --source=. --destination=/tmp/dryrun 2>&1 | tee /tmp/render/apply.log
           test "$(grep -c '^Error:' /tmp/render/apply.log)" = "0"
