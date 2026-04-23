@@ -1,6 +1,6 @@
 {{- /* Prompt for machine-specific configuration */ -}}
-{{- $email := promptStringOnce . "email" "Git email address" "peter.lee@astrocapital.net" -}}
-{{- $name := promptStringOnce . "name" "Git user name" "Peter Lee" -}}
+{{- $email := promptStringOnce . "email" "Git email address" "your-email@example.com" -}}
+{{- $name := promptStringOnce . "name" "Git user name" "Your Name" -}}
 {{- $hostname := promptStringOnce . "hostname" "Machine hostname" (output "hostname" | trim) -}}
 {{- $personal := promptBoolOnce . "personal" "Is this a personal machine" true -}}
 
