@@ -10,12 +10,11 @@ config.font_size = 14
 config.max_fps = 240
 
 if is_windows then
-	config.default_prog = {
-		"cmd.exe",
-		"/s",
-		"/k",
-		"d:\\tool\\conda\\Scripts\\activate.bat d:\\tool\\conda & conda activate paper & d:\\lab\\paper\\winclient\\bin\\clink\\clink_x64.exe inject --profile d:\\home\\peter\\.clink",
-	}
+	-- Let WezTerm use its default shell on Windows.
+	-- Previously hardcoded a machine-specific conda + clink bootstrap path;
+	-- users who want this behaviour should drop a per-host override in a
+	-- separate config file (e.g. ~/.wezterm-overrides.lua) and require it here.
+	config.default_prog = { "cmd.exe" }
 elseif is_darwin then
 	config.default_prog = { "/opt/homebrew/bin/zsh", "-l" }
 else

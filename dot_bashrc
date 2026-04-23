@@ -5,10 +5,7 @@
 # 	. /etc/bashrc
 # fi
 
-function_source="/lab/lib/finclab/sh/bash/function"
-if [[ ! -f "$function_source" ]]; then
-	function_source="$HOME/.files/bash/function"
-fi
+function_source="$HOME/.files/bash/function"
 if [[ -f "$function_source" ]]; then
 	source "$function_source"
 fi
@@ -110,12 +107,7 @@ if ! shopt -oq posix; then
 fi
 
 # Path
-## Anaconda
-export PATH="$PATH:/usr/lib/lightdm/lightdm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/opt/conda/bin:/opt/conda/envs/prod/bin:$HOME/bin:$HOME/.local/bin:/lab/lib/finclab/sh/bin:/lab/lib/finclab/sh/bash:/lab/lib/finclab/sh/zsh:/lab/lib/finclab/sh/fish"
-
-# Default repos -- integrate the variable of default environment
-# unset PYTHONPATH
-export PYTHONPATH=/lab/lib:~/lab/lib:$PYTHONPATH
+export PATH="$PATH:/usr/lib/lightdm/lightdm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:$HOME/bin:$HOME/.local/bin"
 
 # Grab env variables (only if parse_yaml_env function exists)
 if command -v parse_yaml_env &>/dev/null; then
@@ -160,22 +152,9 @@ if [[ -f "$HOME/.local/lib/cargo/env" ]]; then
 	. "$HOME/.local/lib/cargo/env"
 fi
 
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/opt/conda/bin/conda' 'shell.bash' 'hook' 2>/dev/null)"
-if [ $? -eq 0 ]; then
-	eval "$__conda_setup"
-else
-	if [ -f "/opt/conda/etc/profile.d/conda.sh" ]; then
-		. "/opt/conda/etc/profile.d/conda.sh"
-	else
-		export PATH="/opt/conda/bin:$PATH"
-	fi
-fi
-unset __conda_setup
-# <<< conda initialize <<<
-if command -v conda &>/dev/null; then
-	conda activate /opt/conda/envs/prod 2>/dev/null || true
+# Conda init (path-agnostic)
+if command -v conda >/dev/null 2>&1; then
+	eval "$(conda shell.bash hook)"
 fi
 
 # ------ Bitwarden CLI auto-unlock (via 1Password) ------
@@ -207,4 +186,6 @@ if command -v bw &>/dev/null && command -v op &>/dev/null; then
     fi
 fi
 
-alias claude-mem='bun "/home/peter/.claude/plugins/marketplaces/thedotmack/plugin/scripts/worker-service.cjs"'
+if [[ -f "${HOME}/.claude/plugins/marketplaces/thedotmack/plugin/scripts/worker-service.cjs" ]]; then
+	alias claude-mem="bun \"${HOME}/.claude/plugins/marketplaces/thedotmack/plugin/scripts/worker-service.cjs\""
+fi

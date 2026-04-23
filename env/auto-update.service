@@ -1,9 +1,0 @@
-[Unit]
-Description=Update system prerequisites and CLI tools
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/home/peter/.files/cli restore
-StandardOutput=journal
-StandardError=journal
