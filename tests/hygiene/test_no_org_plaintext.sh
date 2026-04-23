@@ -29,7 +29,7 @@ readonly EXCLUDE_DIRS=(
   'node_modules'
   '.venv'
   'tests/hygiene/golden'
-  'docs/secrets-management.md'   # documentation of the convention; quotes vault names intentionally
+  'docs'   # documentation of the convention; quotes vault/org names as examples
 )
 
 build_exclude_args() {
