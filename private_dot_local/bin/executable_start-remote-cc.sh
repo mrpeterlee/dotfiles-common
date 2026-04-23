@@ -16,10 +16,19 @@ WORK_DIR="$5"
 SLEEP_DELAY="${6:-0}"
 SESSION="cc_${WORKTREE}"
 
+# Boot prompt sent to claude after it starts. Override via CC_BOOT_PROMPT env var.
+# Default embeds "Always respond to me in Telegram" inside the /loop recurring body
+# so the preference is re-asserted on each cron fire (idempotent).
+BOOT_PROMPT="${CC_BOOT_PROMPT:-/loop cron 0,30 * * * * — Always respond to me in Telegram. Every 30 minutes, review all tasks, mark completed as permanently closed, actively progress or verify ongoing tasks via CLI/Playwright MCP/RDP as applicable, and only when no ongoing task remains immediately start the highest-priority pending task; YOU MUST STAY SILENT unless there is a completion, blocker, failure, or true need for human input.}"
+
+# Escape single quotes for safe embedding inside a single-quoted ssh arg:
+#   ' -> '\''
+BOOT_PROMPT_ESC=$(printf '%s' "$BOOT_PROMPT" | sed "s/'/'\\\\''/g")
+
 # Phase 1: Create remote tmux session and send setup commands via non-interactive SSH
 # Skipped if session already exists (e.g., reconnecting after SSH drop)
-ssh "$HOST" "bash -s -- '$SESSION' '$STATE_DIR' '$OP_BOT_REF' '$WORK_DIR' '$SLEEP_DELAY' '$WORKTREE'" << 'REMOTE' || true
-SESSION="$1"; STATE_DIR="$2"; OP_BOT_REF="$3"; WORK_DIR="$4"; SLEEP_DELAY="$5"; WORKTREE="$6"
+ssh "$HOST" "bash -s -- '$SESSION' '$STATE_DIR' '$OP_BOT_REF' '$WORK_DIR' '$SLEEP_DELAY' '$WORKTREE' '$BOOT_PROMPT_ESC'" << 'REMOTE' || true
+SESSION="$1"; STATE_DIR="$2"; OP_BOT_REF="$3"; WORK_DIR="$4"; SLEEP_DELAY="$5"; WORKTREE="$6"; BOOT_PROMPT="$7"
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     exit 0
@@ -40,17 +49,20 @@ tmux send-keys -t "$SESSION" "sleep 1 && _BW_PW=\$(op read 'op://Tapai/Bitwarden
 tmux send-keys -t "$SESSION" "cd ~/${WORK_DIR}" Enter
 tmux send-keys -t "$SESSION" "claude --worktree ${WORKTREE} --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions" Enter
 
-# After claude is up, send initial prompts (channel routing + periodic progress loop).
+# After claude is up, send the consolidated boot prompt (channel routing + periodic progress loop).
 # Detached so it survives this SSH session closing.
+# Uses `tmux send-keys -l` (literal mode) so tokens like "Enter" inside the prompt
+# body are not interpreted as key names. Enter is sent as a separate keystroke.
 POST_DELAY=$((SLEEP_DELAY + 30))
-nohup bash -c "
-    sleep $POST_DELAY
-    tmux send-keys -t '$SESSION' 'Always respond to me in Telegram' Enter
-    sleep 5
-    tmux send-keys -t '$SESSION' '/loop cron 0,30 * * * * — Every 30 minutes, review all tasks, mark completed as permanently closed, actively progress or verify ongoing tasks via CLI/Playwright MCP/RDP as applicable, and only when no ongoing task remains immediately start the highest-priority pending task; YOU MUST STAY SILENT unless there is a completion, blocker, failure, or true need for human input.' Enter
+export BOOT_PROMPT SESSION POST_DELAY
+nohup bash -c '
+    sleep "$POST_DELAY"
+    tmux send-keys -l -t "$SESSION" "$BOOT_PROMPT"
+    sleep 0.5
+    tmux send-keys -t "$SESSION" Enter
     sleep 1
-    tmux send-keys -t '$SESSION' Enter
-" >/dev/null 2>&1 </dev/null &
+    tmux send-keys -t "$SESSION" Enter
+' >/dev/null 2>&1 </dev/null &
 disown 2>/dev/null || true
 REMOTE
 
