@@ -17,10 +17,12 @@ SLEEP_DELAY="${6:-0}"
 SESSION="cc_${WORKTREE}"
 
 # Boot prompt sent to claude after it starts. Override via CC_BOOT_PROMPT env var.
-# Default delegates the full operational spec to loop_prompt.md in the acap repo
-# so the spec can evolve without re-deploying this script; each cron tick re-reads
-# the file and executes its instructions.
-BOOT_PROMPT="${CC_BOOT_PROMPT:-/loop cron 0,30 * * * * — Re-read /home/peter/acap/ansible/roles/tmuxinator/loop_prompt.md each tick and execute its instructions.}"
+# Default delegates the full operational spec to loop_prompt.md inside this
+# dotfiles repo (chezmoi installs it at ~/.config/tmuxinator/loop_prompt.md on
+# every host) so the spec can evolve without re-deploying this script — and so
+# hosts that don't have ~/acap (e.g. tapai-admin) still get a valid path. Each
+# cron tick re-reads the file and executes its instructions.
+BOOT_PROMPT="${CC_BOOT_PROMPT:-/loop cron 0,30 * * * * — Re-read ~/.config/tmuxinator/loop_prompt.md each tick and execute its instructions.}"
 
 # Escape single quotes for safe embedding inside a single-quoted ssh arg:
 #   ' -> '\''
