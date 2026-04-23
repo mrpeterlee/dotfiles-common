@@ -47,7 +47,10 @@ tmux send-keys -t "$SESSION" "test -f /tmp/claude_telegram_sessions/${STATE_DIR}
 tmux send-keys -t "$SESSION" "export TELEGRAM_BOT_TOKEN=\$(op read '${OP_BOT_REF}')" Enter
 tmux send-keys -t "$SESSION" "export TELEGRAM_STATE_DIR=/tmp/claude_telegram_sessions/${STATE_DIR}" Enter
 tmux send-keys -t "$SESSION" "sleep 1 && _BW_PW=\$(op read 'op://Tapai/Bitwarden/password' 2>/dev/null) && command -v bw >/dev/null 2>&1 && export BW_SESSION=\$(bw unlock \"\$_BW_PW\" --raw); unset _BW_PW" Enter
-tmux send-keys -t "$SESSION" "cd ~/${WORK_DIR}" Enter
+# Prefer the session-scoped git worktree so the bot never touches the main
+# clone (the auto-deploy cron does `git reset --hard origin/main` on it).
+# Fall back to the main clone if the worktree hasn't been provisioned yet.
+tmux send-keys -t "$SESSION" "cd ~/${WORK_DIR}/.claude/worktrees/${WORKTREE} 2>/dev/null || cd ~/${WORK_DIR}" Enter
 tmux send-keys -t "$SESSION" "claude --worktree ${WORKTREE} --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions" Enter
 
 # After claude is up, send the consolidated boot prompt (channel routing + periodic progress loop).
