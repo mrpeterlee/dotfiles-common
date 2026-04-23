@@ -277,7 +277,7 @@ return {
           desc = "Format .py",
         },
         ["<Leader>lH"] = {
-          -- "<cmd>:0 | let blank=''|let t='\"\"\" {Module Name}'|put=t|put=blank|let t='id:            Peter Lee (peter.lee@astrocapital.net)'|put=t|let t='last_update:   ' . strftime('%Y-%m-%d %H:%M:%S %Z')|put=t|let t='type:          lib'|put=t|let t='sensitivity:   datalab@astrocapital.net'|put=t|let t='platform:      any'|put=t|let t='description:   {Description}'|put=t|let t='\"\"\"'|put=t<CR>",
+          -- "<cmd>:0 | let blank=''|let t='\"\"\" {Module Name}'|put=t|put=blank|let t='id:            <your-name> (<your-email>)'|put=t|let t='last_update:   ' . strftime('%Y-%m-%d %H:%M:%S %Z')|put=t|let t='type:          lib'|put=t|let t='sensitivity:   <your-team>'|put=t|let t='platform:      any'|put=t|let t='description:   {Description}'|put=t|let t='\"\"\"'|put=t<CR>",
           --
           function()
             -- Insert a blank line at the top of the buffer
@@ -286,11 +286,11 @@ return {
             -- Define the header lines
             local header_lines = {
               "#!/usr/bin/env python",
-              "# @Author     : Peter Lee",
-              "# @Email      : peter.lee@astrocapital.net",
+              "# @Author     : <your-name>",
+              "# @Email      : <your-email>",
               "# @Last Update: " .. os.date "%Y-%m-%d %H:%M:%S %Z",
               "# @Type       : lib",
-              "# @Sensitivity: global_equities@astrocapital.net",
+              "# @Sensitivity: <your-team>",
               "# @Platform   : any",
               "",
             }

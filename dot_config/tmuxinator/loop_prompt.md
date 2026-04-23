@@ -182,12 +182,9 @@ Opening a PR creates a commitment. Do not hand it back.
    verdict dispatch, ping-pong guard, and 30-minute stall check. Do
    not reinvent it.
 
-   n8n instance by org:
-
-   | Repo owner    | n8n instance                    |
-   |---------------|---------------------------------|
-   | `astro-cap/*` | `https://n8n.acap.cc`           |
-   | `tapai/*`     | `https://automation.tapai.com`  |
+   n8n instance is org-specific; the `pr-codex-watch` skill resolves
+   the right `N8N_URL` from the repo owner at skill start. Do not
+   hardcode it here.
 
 2. **On `MERGED`**: send one Telegram `reply` (`PR #N merged`). The
    skill stops polling; the session resumes the main sweep.

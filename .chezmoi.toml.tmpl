@@ -1,6 +1,6 @@
 {{- /* Prompt for machine-specific configuration */ -}}
-{{- $email := promptStringOnce . "email" "Git email address" "peter.lee@astrocapital.net" -}}
-{{- $name := promptStringOnce . "name" "Git user name" "Peter Lee" -}}
+{{- $email := promptStringOnce . "email" "Git email address" "your-email@example.com" -}}
+{{- $name := promptStringOnce . "name" "Git user name" "Your Name" -}}
 {{- $hostname := promptStringOnce . "hostname" "Machine hostname" (output "hostname" | trim) -}}
 {{- $personal := promptBoolOnce . "personal" "Is this a personal machine" true -}}
 
@@ -37,31 +37,6 @@
 {{-   $opSignedIn = (output "op" "account" "list" "--format=json" | fromJson | len) | gt 0 -}}
 {{- end -}}
 
-{{- /* Load infrastructure secrets from 1Password if available */ -}}
-{{- $awsAccountId := "000000000000" -}}
-{{- $awsRoute53ZoneId := "ZXXXXXXXXXXXXXXXXXX" -}}
-{{- $awsIamRole := "arn:aws:iam::000000000000:role/example-role" -}}
-{{- $vpnHost := "vpn.example.com" -}}
-{{- $vpnPort := "55555" -}}
-{{- $vaultUrl := "https://vault.example.com" -}}
-{{- $dockerRegistry := "registry.example.com" -}}
-{{- $internalIp := "10.0.0.1" -}}
-{{- $internalPort := "8080" -}}
-{{- $baseDomain := "example.com" -}}
-
-{{- if $opSignedIn -}}
-{{-   $awsAccountId = onepasswordRead "op://AstroCapital/Infrastructure/aws_account_id" -}}
-{{-   $awsRoute53ZoneId = onepasswordRead "op://AstroCapital/Infrastructure/aws_route53_zone_id" -}}
-{{-   $awsIamRole = onepasswordRead "op://AstroCapital/Infrastructure/aws_iam_role" -}}
-{{-   $vpnHost = onepasswordRead "op://AstroCapital/Infrastructure/vpn_host" -}}
-{{-   $vpnPort = onepasswordRead "op://AstroCapital/Infrastructure/vpn_port" -}}
-{{-   $vaultUrl = onepasswordRead "op://AstroCapital/Infrastructure/vault_url" -}}
-{{-   $dockerRegistry = onepasswordRead "op://AstroCapital/Infrastructure/docker_registry" -}}
-{{-   $internalIp = onepasswordRead "op://AstroCapital/Infrastructure/internal_ip" -}}
-{{-   $internalPort = onepasswordRead "op://AstroCapital/Infrastructure/internal_port" -}}
-{{-   $baseDomain = onepasswordRead "op://AstroCapital/Infrastructure/base_domain" -}}
-{{- end -}}
-
 # Root-level chezmoi configuration (must be before any sections)
 sourceDir = {{ joinPath .chezmoi.homeDir ".files" | quote }}
 
@@ -81,19 +56,6 @@ sourceDir = {{ joinPath .chezmoi.homeDir ".files" | quote }}
     pkgmgr = {{ $pkgmgr | quote }}
     hasOp = {{ $hasOp }}
     opSignedIn = {{ $opSignedIn }}
-
-    # Infrastructure secrets (from 1Password or defaults)
-    [data.infra]
-        aws_account_id = {{ $awsAccountId | quote }}
-        aws_route53_zone_id = {{ $awsRoute53ZoneId | quote }}
-        aws_iam_role = {{ $awsIamRole | quote }}
-        vpn_host = {{ $vpnHost | quote }}
-        vpn_port = {{ $vpnPort | quote }}
-        vault_url = {{ $vaultUrl | quote }}
-        docker_registry = {{ $dockerRegistry | quote }}
-        internal_ip = {{ $internalIp | quote }}
-        internal_port = {{ $internalPort | quote }}
-        base_domain = {{ $baseDomain | quote }}
 
 {{ if $isWindows -}}
 [interpreters.ps1]

@@ -253,8 +253,8 @@ create_default_config() {
 sourceDir = "${HOME}/.files"
 
 [data]
-    email = "peter.lee@astrocapital.net"
-    name = "Peter Lee"
+    email = "your-email@example.com"
+    name = "Your Name"
     hostname = "$(hostname)"
     personal = true
     osid = "$(uname -s | tr '[:upper:]' '[:lower:]')"

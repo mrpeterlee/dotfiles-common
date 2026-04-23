@@ -1,0 +1,69 @@
+name: Hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  no-org-plaintext:
+    name: No org-specific plaintext
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run plaintext gate
+        run: ./tests/hygiene/test_no_org_plaintext.sh
+
+  render-matrix:
+    name: Chezmoi render (${{ matrix.os }})
+    needs: no-org-plaintext
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install chezmoi
+        shell: bash
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsLS get.chezmoi.io | sh -s -- -b "$HOME/bin"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/chezmoi" --version
+      - name: Render templates
+        shell: bash
+        run: |
+          mkdir -p /tmp/render ~/.config/chezmoi
+          # Bypass `chezmoi init` entirely — the toml template uses
+          # promptStringOnce which chezmoi 2.70.2 can't be coerced into
+          # defaulting non-interactively (--no-tty + --prompt-string
+          # both fail). Pre-writing a minimal chezmoi.toml with all
+          # data fields the templates reference sidesteps init.
+          case "$RUNNER_OS" in
+            Linux)   OSID=linux;   PKG=apt;    ISL=true;  ISD=false; ISW=false;;
+            macOS)   OSID=darwin;  PKG=brew;   ISL=false; ISD=true;  ISW=false;;
+            Windows) OSID=windows; PKG=winget; ISL=false; ISD=false; ISW=true;;
+            *)       echo "Unsupported RUNNER_OS: $RUNNER_OS"; exit 1;;
+          esac
+          cat > ~/.config/chezmoi/chezmoi.toml <<EOF
+          sourceDir = "$PWD"
+
+          [data]
+              email = "ci@example.com"
+              name = "CI Runner"
+              hostname = "ci-runner"
+              personal = false
+              osid = "$OSID"
+              arch = "amd64"
+              isLinux = $ISL
+              isDarwin = $ISD
+              isWindows = $ISW
+              isWSL = false
+              pkgmgr = "$PKG"
+              hasOp = false
+              opSignedIn = false
+          EOF
+          chezmoi apply --dry-run --source=. --destination=/tmp/dryrun 2>&1 | tee /tmp/render/apply.log
+          test "$(grep -c '^Error:' /tmp/render/apply.log)" = "0"

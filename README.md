@@ -1,19 +1,26 @@
 # Dotfiles
 
-Personal dotfiles managed with [chezmoi](https://www.chezmoi.io/).
+Cross-platform infrastructure baseline dotfiles managed with [chezmoi](https://www.chezmoi.io/).
+
+This repo is the **common, org-agnostic** base. Organizational content
+(vault names, infra IPs, per-org hosts, project-specific shell aliases)
+lives in **overlays** that stack on top at apply time. See
+`docs/overlay-convention.md` for the layering model.
 
 ## Quick Start
 
 ### One-liner install (new machine)
 
 ```bash
-# With 1Password (recommended)
-op signin
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply MrPeterLee
-
-# Without 1Password (uses placeholder values)
+# Install chezmoi and apply this repo
 sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply MrPeterLee
 ```
+
+At `chezmoi init` time, you will be prompted for:
+
+- Your git email and name
+- Host role (base-only, or a known overlay role)
+- Whether this is a personal machine
 
 ### Using the CLI
 
@@ -30,7 +37,12 @@ cd ~/.files
 ./cli help                 # Full usage guide
 ```
 
-## What's Included
+The `dots` CLI (Python/Click, part of the umbrella dotfiles-unification
+work) will eventually replace the bash `cli` wrapper and handle overlay
+stacking natively. Until then, overlays are applied via their own
+`chezmoi apply --source=<overlay-root>` invocation.
+
+## What's Included (base)
 
 | Category | Tools |
 |----------|-------|
@@ -41,6 +53,10 @@ cd ~/.files
 | **File Manager** | yazi |
 | **Utilities** | fzf, zoxide, bat, ripgrep |
 
+Org-specific content (project aliases, infisical/vault wrappers,
+per-org tmuxinator sessions, per-org SSH config) lives in overlays,
+not here.
+
 ## Platform Support
 
 - **Linux**: Debian/Ubuntu (apt), Arch (pacman), Fedora (dnf)
@@ -49,7 +65,8 @@ cd ~/.files
 
 ## Keyboard Layout
 
-This config uses the **Graphite** keyboard layout (not QWERTY). Navigation keys are remapped consistently across all tools:
+This config uses the **Graphite** keyboard layout (not QWERTY).
+Navigation keys are remapped consistently across all tools:
 
 ```
 y = left    h = down    a = up    e = right
@@ -58,86 +75,18 @@ j = end-of-word    l = append    ' = yank
 
 ## Secrets Management
 
-This repo uses **1Password** as the single source of truth for all infrastructure secrets. Sensitive data (IPs, hostnames, AWS credentials) are stored in 1Password and injected via chezmoi templates.
+The base repo does **not** reference any specific 1Password vault.
+Instead, overlay `.chezmoidata/overlay.yaml` defines a `vault:` key;
+templates that need a secret read from `op://{{ .vault }}/...`.
 
-### Architecture
+See `docs/secrets-management.md` and `docs/overlay-convention.md`
+for the full model.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   1Password Vault: AstroCapital             │
-│                   Item: Infrastructure                       │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ aws_account_id, aws_route53_zone_id, aws_iam_role   │   │
-│  │ vpn_host, vpn_port, vault_url, docker_registry      │   │
-│  │ internal_ip, internal_port, base_domain             │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ chezmoi reads via onepasswordRead
-┌─────────────────────────────────────────────────────────────┐
-│  ~/.config/chezmoi/chezmoi.toml                            │
-│  [data.infra]                                              │
-│      aws_account_id = "real-value"                         │
-│      vpn_host = "real-hostname"                            │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ templates use {{ .infra.* }}
-┌─────────────────────────────────────────────────────────────┐
-│  Final config files with real values                        │
-└─────────────────────────────────────────────────────────────┘
-```
+### Without an overlay
 
-### Setup 1Password Secrets
-
-```bash
-# Interactive setup (creates Infrastructure item in AstroCapital vault)
-./scripts/setup-1password-secrets.sh
-
-# Or manually create via CLI
-op item create --category=login --vault AstroCapital --title Infrastructure \
-    "aws_account_id=123456789012" \
-    "aws_route53_zone_id=ZXXXXXXXXXXXXX" \
-    "vpn_host=vpn.example.com" \
-    # ... etc
-```
-
-### Template Variables
-
-Files ending in `.tmpl` use these variables:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{ .infra.aws_account_id }}` | AWS account ID | `123456789012` |
-| `{{ .infra.aws_route53_zone_id }}` | Route53 hosted zone | `ZXXXXXXXXXXXXX` |
-| `{{ .infra.aws_iam_role }}` | IAM role ARN | `arn:aws:iam::...` |
-| `{{ .infra.vpn_host }}` | VPN hostname | `vpn.company.com` |
-| `{{ .infra.vpn_port }}` | VPN SSH port | `55555` |
-| `{{ .infra.vault_url }}` | HashiCorp Vault URL | `https://vault.company.com` |
-| `{{ .infra.docker_registry }}` | Docker registry | `registry.company.com` |
-| `{{ .infra.internal_ip }}` | Internal server IP | `10.1.1.100` |
-| `{{ .infra.internal_port }}` | Internal service port | `8080` |
-| `{{ .infra.base_domain }}` | Base domain for services | `company.com` |
-
-### Bitwarden / Vaultwarden (Tapai)
-
-For Tapai project infrastructure, credentials are stored in Vaultwarden (`pw.tapai.com`) and retrieved via the `bw` CLI. Setup is machine-local (not in chezmoi):
-
-```bash
-# Create machine-local config
-mkdir -p ~/.config/bw
-cat > ~/.config/bw/env << 'EOF'
-BW_SERVER=https://pw.tapai.com
-BW_EMAIL=tapai.tech@acap.cc
-BW_PASSWORD=<master-password-here>
-EOF
-chmod 600 ~/.config/bw/env
-```
-
-A `bw-unlock` shell function in `~/.config/zsh/.secrets.local.zsh` reads this config and exports `BW_SESSION`. See `docs/secrets-management.md` for full setup.
-
-### Without 1Password or Bitwarden
-
-If neither is available, chezmoi uses placeholder values from `.chezmoidata.yaml`. You can also create a local secrets file:
+If no overlay is applied, chezmoi uses placeholder values from
+`.chezmoidata.yaml` and no `onepasswordRead` calls fire. You can
+also create a local secrets file for machine-specific exports:
 
 ```bash
 touch ~/.config/zsh/.secrets.local.zsh
@@ -166,7 +115,7 @@ chezmoi update
 # Re-run scripts (force refresh externals)
 chezmoi apply --refresh-externals
 
-# Re-initialize with 1Password (refresh secrets)
+# Re-initialize (refresh secrets)
 chezmoi init --force
 ```
 
@@ -174,22 +123,32 @@ chezmoi init --force
 
 ```
 ~/.local/share/chezmoi/
-├── .chezmoi.toml.tmpl      # Machine config + 1Password integration
+├── .chezmoi.toml.tmpl      # Machine config + prompt data
 ├── .chezmoidata.yaml       # Default/placeholder values
 ├── .chezmoiignore          # Platform exclusions
 ├── .chezmoiexternal.toml   # External deps (TPM, zinit, fzf)
 ├── .chezmoiscripts/        # Installation scripts
-├── scripts/                # Helper scripts (1Password setup)
 ├── dot_config/             # ~/.config/* files
 ├── private_dot_local/      # ~/.local/* files
-└── dot_*                   # Home directory dotfiles
+├── dot_*                   # Home directory dotfiles
+├── tests/                  # Hygiene + render-matrix CI gates
+└── docs/                   # Convention docs (overlay, secrets)
 ```
 
-## Adding New Secrets
+## Adding New Config
 
-1. Add the field to the 1Password "Infrastructure" item
-2. Update `.chezmoi.toml.tmpl` to read it
-3. Add a default to `.chezmoidata.yaml`
-4. Use `{{ .infra.new_field }}` in templates
+1. `chezmoi add ~/.config/app/config.toml` — capture the file
+2. Rename to `.tmpl` if templating is needed
+3. If the file contains org-specific values, the file probably
+   belongs in an **overlay**, not in `.files` — see
+   `docs/overlay-convention.md`
 
-See `docs/secrets-management.md` for detailed guide.
+## Hygiene gate
+
+`tests/hygiene/test_no_org_plaintext.sh` scans the repo for banned
+organizational-plaintext patterns (specific vault names, infra IPs,
+org-specific email domains, etc.). CI runs this on every PR. Offending
+content belongs in overlays.
+
+See `docs/secrets-management.md` for the detailed secrets guide,
+`docs/overlay-convention.md` for the overlay layering model.

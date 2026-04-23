@@ -1,21 +1,8 @@
-# Default infrastructure values (safe for public repo)
-# Real values are loaded from 1Password via chezmoi.toml on each machine
-
-infra:
-  # AWS
-  aws_account_id: "000000000000"
-  aws_route53_zone_id: "ZXXXXXXXXXXXXXXXXXX"
-  aws_iam_role: "arn:aws:iam::000000000000:role/example-role"
-
-  # Hostnames
-  vpn_host: "vpn.example.com"
-  vpn_port: "22"
-  vault_url: "https://vault.example.com"
-  docker_registry: "registry.example.com"
-
-  # Internal network
-  internal_ip: "10.0.0.1"
-  internal_port: "8080"
-
-  # Domains (subdomains of your base domain)
-  base_domain: "example.com"
+# Base dotfiles data. Org-specific values live in the per-overlay
+# .chezmoidata/overlay.yaml (see docs/overlay-convention.md).
+#
+# The `vault` variable is intentionally absent here — .files base
+# templates MUST NOT resolve `op://{{ .vault }}/...` URIs, because
+# `.vault` is only defined by the overlay that an organization
+# contributes. If a base template references `.vault`, chezmoi will
+# fail with "<vault>: undefined" — that's the design.
