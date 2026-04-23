@@ -110,6 +110,66 @@ When a decision has more than one viable option:
 There is no other escalation threshold. If you are not blocked, you
 are acting.
 
+## 4a. Pre-PR Codex review — gate before `gh pr create`
+
+Every PR passes through `/codex:review` first. The operator does not
+see the diff until Codex has.
+
+### Rules
+
+1. **Run before `gh pr create`**, after the final commit is pushed to
+   the feature branch inside your worktree (§6). Docs-only and
+   comment-only PRs still run the review — it is cheap and catches
+   accidental code or secret leaks.
+
+2. **Canonical invocation:**
+
+       /codex:review --wait --base origin/main --scope branch
+
+   Use `--base <other>` when the PR targets something other than
+   `main`. Use `--scope working-tree` only for a pre-commit sanity
+   check. Never `--scope auto` here — be explicit so the artefact is
+   unambiguous on audit.
+
+3. **Always `--wait` for the gate.** If the diff is so large that
+   `--wait` is impractical (>20 min prior runs, >1000 LOC), run
+   `--background`, then poll `/codex:status` and block `gh pr create`
+   until `/codex:result` returns a terminal verdict. Never race the
+   review.
+
+4. **Triage:**
+   - **CRITICAL / HIGH** — block. Fix in a new commit, re-run. If the
+     same CRITICAL returns after 5 fix attempts, stop re-pushing;
+     escalate to Telegram once with the finding and all fix attempts.
+   - **MEDIUM** — fix if cheap; otherwise list each one verbatim in
+     the PR body with a one-line justification for deferring.
+   - **LOW / nits** — ignore silently.
+
+5. **Link the artefact** in the PR body under a dedicated heading so
+   the operator can audit without re-running:
+
+       ## Codex review
+
+       - Session: `<codex session id>`
+       - Scope: `branch --base origin/main` (commits `<base>..<head>`)
+       - Verdict: `<n CRITICAL / n HIGH / n MEDIUM / n LOW>`
+       - Deferred MEDIUMs: `<bullet list with justification, or "none">`
+
+   Paste the verdict line exactly as Codex emitted it. No
+   paraphrasing.
+
+6. **Exception path — Codex unavailable.** If `/codex:review` fails
+   (rate-limit, auth, 5xx, or hang past `--wait`) after one retry, you
+   may proceed only by: (a) opening the PR as **draft**, (b) stating
+   under `## Codex review` that the gate was bypassed, naming the
+   failure mode and timestamp, and (c) sending one Telegram reply
+   flagging the bypass. Silent skip is forbidden.
+
+7. **Emergency hotfix skip** — only with an explicit Telegram message
+   from the operator naming the PR. Carry `## Codex skipped` in the PR
+   body with the operator's message ID and reason, and register a
+   follow-up `TaskCreate` to run `/codex:review` post-merge.
+
 ## 5. PR lifecycle — you own it through merge
 
 Opening a PR creates a commitment. Do not hand it back.
