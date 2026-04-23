@@ -28,8 +28,10 @@ jobs:
       - name: Install chezmoi
         shell: bash
         run: |
-          curl -fsLS get.chezmoi.io | sh
+          mkdir -p "$HOME/bin"
+          curl -fsLS get.chezmoi.io | sh -s -- -b "$HOME/bin"
           echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/chezmoi" --version
       - name: Render templates
         shell: bash
         run: |
