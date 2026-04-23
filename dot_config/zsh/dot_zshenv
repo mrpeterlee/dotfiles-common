@@ -22,9 +22,6 @@ if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bw/env" ]]; then
     source "${XDG_CONFIG_HOME:-$HOME/.config}/bw/env"
 fi
 
-# Infisical
-export INFISICAL_API_URL="https://infisical.acap.cc/api"
-
 # Set XDG directories
 export XDG_CONFIG_HOME="${HOME}/.config"
 export XDG_DATA_HOME="${HOME}/.local/share"
@@ -103,5 +100,12 @@ COWPATH=$COWPATH:~/.local/src/cowfiles
 
 if [[ -f "$HOME/.local/share/cargo/env" ]]; then
   . "$HOME/.local/share/cargo/env"
+fi
+
+# Load overlay-contributed zshenv fragments
+if [[ -d "${ZDOTDIR:-$HOME/.config/zsh}/zshenv.d" ]]; then
+  for f in "${ZDOTDIR:-$HOME/.config/zsh}/zshenv.d/"*.zsh(N); do
+    source "$f"
+  done
 fi
 
