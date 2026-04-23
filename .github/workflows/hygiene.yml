@@ -1,0 +1,39 @@
+name: Hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  no-org-plaintext:
+    name: No org-specific plaintext
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run plaintext gate
+        run: ./tests/hygiene/test_no_org_plaintext.sh
+
+  render-matrix:
+    name: Chezmoi render (${{ matrix.os }})
+    needs: no-org-plaintext
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install chezmoi
+        shell: bash
+        run: |
+          curl -fsLS get.chezmoi.io | sh
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Render templates
+        shell: bash
+        run: |
+          mkdir -p /tmp/render
+          chezmoi execute-template --source=. < /dev/null > /tmp/render/execute.log 2>&1 || true
+          chezmoi apply --dry-run --source=. --destination=/tmp/dryrun 2>&1 | tee /tmp/render/apply.log
+          test "$(grep -c '^Error:' /tmp/render/apply.log)" = "0"
