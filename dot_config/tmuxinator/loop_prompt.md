@@ -110,10 +110,11 @@ When a decision has more than one viable option:
 There is no other escalation threshold. If you are not blocked, you
 are acting.
 
-## 4a. Pre-PR Codex review — gate before `gh pr create`
+## 4a. Pre-PR review gate — before `gh pr create`
 
-Every PR passes through `/codex:review` first. The operator does not
-see the diff until Codex has.
+Every PR passes through a pre-PR review gate. The operator does not
+see the diff until a reviewer has. This gate is the first-pass
+filter; it is independent of §5's post-PR merge authority.
 
 ### Rules
 
@@ -122,90 +123,93 @@ see the diff until Codex has.
    comment-only PRs still run the review — it is cheap and catches
    accidental code or secret leaks.
 
-2. **Canonical invocation:**
+2. **Primary reviewer — `codex` skill (review mode).** Invoke via the
+   `Skill` tool with `skill=codex`, `args=review`. This runs the
+   OpenAI Codex CLI on the local branch diff (`git diff origin/<base>`)
+   as an independent second opinion — a different model family from
+   this Claude session. No PR number and no push are required. The
+   skill emits `[P1]` / `[P2]` tags and a deterministic gate line.
 
-       /codex:review --wait --base origin/main --scope branch
-
-   Use `--base <other>` when the PR targets something other than
-   `main`. Use `--scope working-tree` only for a pre-commit sanity
-   check. Never `--scope auto` here — be explicit so the artefact is
-   unambiguous on audit.
-
-3. **Always `--wait` for the gate.** If the diff is so large that
-   `--wait` is impractical (>20 min prior runs, >1000 LOC), run
-   `--background`, then poll `/codex:status` and block `gh pr create`
-   until `/codex:result` returns a terminal verdict. Never race the
-   review.
-
-4. **Triage:**
-   - **CRITICAL / HIGH** — block. Fix in a new commit, re-run. If the
-     same CRITICAL returns after 5 fix attempts, stop re-pushing;
+3. **Triage the verdict:**
+   - **`[P1]` present → GATE: FAIL.** Fix in a new commit, re-run.
+     If the same P1 returns after 5 fix attempts, stop re-pushing;
      escalate to Telegram once with the finding and all fix attempts.
-   - **MEDIUM** — fix if cheap; otherwise list each one verbatim in
-     the PR body with a one-line justification for deferring.
-   - **LOW / nits** — ignore silently.
+   - **`[P2]` only → GATE: PASS.** Fix if cheap; otherwise list each
+     P2 verbatim in the PR body with a one-line justification for
+     deferring.
 
-5. **Link the artefact** in the PR body under a dedicated heading so
-   the operator can audit without re-running:
+4. **Degraded fallback — `review` skill (gstack).** Trigger when
+   `codex` fails with `auth error 401` (stale `CODEX_AUTH_JSON`,
+   known gotcha in CLAUDE.md) **or** the run exceeds 5 minutes.
+   Invoke via `Skill` with `skill=review`. It runs a base-branch
+   diff pass with the local Claude model. Proceed only on PASS and
+   annotate the PR body that the gate ran in degraded mode.
 
-       ## Codex review
+   Never substitute `/code-review` here — that command reads HEAD
+   (uncommitted) diff only and exits empty after `git commit`.
 
-       - Session: `<codex session id>`
+5. **Artefact in the PR body.** Every PR opened by the session ends
+   with:
+
+       ## Pre-PR review
+
+       - Reviewer: `<codex | review-fallback>`
        - Scope: `branch --base origin/main` (commits `<base>..<head>`)
-       - Verdict: `<n CRITICAL / n HIGH / n MEDIUM / n LOW>`
-       - Deferred MEDIUMs: `<bullet list with justification, or "none">`
+       - Verdict: `<n P1 / n P2>` — P1-free to proceed.
+       - Deferred P2s: `<bullet list with justification, or "none">`
 
-   Paste the verdict line exactly as Codex emitted it. No
+   Paste the verdict line exactly as the reviewer emitted it. No
    paraphrasing.
 
-6. **Exception path — Codex unavailable.** If `/codex:review` fails
-   (rate-limit, auth, 5xx, or hang past `--wait`) after one retry, you
-   may proceed only by: (a) opening the PR as **draft**, (b) stating
-   under `## Codex review` that the gate was bypassed, naming the
-   failure mode and timestamp, and (c) sending one Telegram reply
-   flagging the bypass. Silent skip is forbidden.
+6. **Exception path — both reviewers unavailable.** If primary and
+   fallback both fail after one retry each, open the PR as **draft**,
+   state under `## Pre-PR review` that both gates were bypassed
+   (naming each failure mode and timestamp), and send one Telegram
+   reply flagging the bypass. Silent skip is forbidden.
 
 7. **Emergency hotfix skip** — only with an explicit Telegram message
-   from the operator naming the PR. Carry `## Codex skipped` in the PR
-   body with the operator's message ID and reason, and register a
-   follow-up `TaskCreate` to run `/codex:review` post-merge.
+   from the operator naming the PR. Carry `## Pre-PR review skipped`
+   in the PR body with the operator's message ID and reason, and
+   register a follow-up `TaskCreate` to run the review post-merge.
 
 ## 5. PR lifecycle — you own it through merge
 
 Opening a PR creates a commitment. Do not hand it back.
 
-1. **On `gh pr create`**, immediately register a minute-level polling
-   loop and capture the cron ID returned by `CronCreate`. Store the
-   pair `(pr_number, cron_id)` in session memory so you can cancel the
-   correct loop later. Polling prompt:
+1. **On `gh pr create`, immediately invoke the `pr-codex-watch` skill**
+   via the `Skill` tool (`skill=pr-codex-watch`, passing the PR
+   number and `<owner>/<repo>`). The skill owns the polling loop,
+   verdict dispatch, ping-pong guard, and 30-minute stall check. Do
+   not reinvent it.
 
-       Poll PR #<N>: fetch reviews and CI; address any new actionable
-       review feedback with a new commit; fix CI failures; on merge,
-       CronDelete <cron_id> and return to the main sweep.
+   n8n instance by org:
 
-2. **Each tick of the polling loop**:
-   - `gh pr view <N> --json state,mergeStateStatus,reviews,comments,statusCheckRollup`
-   - Track the highest review / comment ID you have already addressed;
-     only act on IDs greater than that cursor. This is how you know
-     what is "new".
-   - **Actionable** feedback = `REQUEST_CHANGES` reviews, blocking
-     inline comments, or explicit questions from a human reviewer. Bot
-     comments, thumbs-ups, nits, and resolved threads are not
-     actionable.
-   - If CI is failing: diagnose and push a fix. If the same check has
-     failed ≥ 3 consecutive ticks with no new code changes (flake
-     suspected), escalate once to Telegram and stop re-pushing.
-   - If the PR is **merged**: `CronDelete <cron_id>`, send one Telegram
-     reply ("PR #N merged"), then resume the main sweep.
-   - If the PR is **closed without merge**: escalate once to Telegram,
-     then `CronDelete <cron_id>`.
+   | Repo owner    | n8n instance                    |
+   |---------------|---------------------------------|
+   | `astro-cap/*` | `https://n8n.acap.cc`           |
+   | `tapai/*`     | `https://automation.tapai.com`  |
 
-3. One polling loop per PR. Never multiplex a single loop across
-   multiple PRs. A second open PR gets its own `(pr_number, cron_id)`
-   pair.
+2. **On `MERGED`**: send one Telegram `reply` (`PR #N merged`). The
+   skill stops polling; the session resumes the main sweep.
 
-4. The main 30-minute sweep (§1) keeps running alongside the polling
+3. **On `CHANGES_REQUESTED`**: fix every HIGH + MEDIUM finding in
+   the review body, commit, push. Codex re-reviews on `synchronize`.
+   If Codex rejects twice on the same issue, escalate once to
+   Telegram and stop — do not ping-pong.
+
+4. **On `CLOSED` without merge**: read `close_reason` from the latest
+   review, escalate once to Telegram, abandon or reframe.
+
+5. **Multiple open PRs**: one `pr-codex-watch` invocation per PR,
+   never multiplexed. A second open PR gets its own invocation.
+
+6. **The 30-minute sweep (§1) continues alongside** the pr-codex-watch
    loops — not instead of them.
+
+7. **Repos outside `astro-cap/*` and `tapai/*`** (e.g. personal
+   dotfiles) do not have the n8n bot. In those repos, §4a's gate is
+   authoritative; after `gh pr create`, merge via `gh pr merge` once
+   CI is green.
 
 ## 6. Worktree discipline — never touch the main clone
 
