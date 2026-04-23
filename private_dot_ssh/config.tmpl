@@ -10,7 +10,11 @@ Host *
 Host acap
     HostName 18.138.191.35
     User peter
+{{- if stat (joinPath .chezmoi.homeDir ".ssh/acap-admin_peter.pem") }}
     IdentityFile ~/.ssh/acap-admin_peter.pem
+{{- else if stat (joinPath .chezmoi.homeDir ".ssh/acap-admin-key.pem") }}
+    IdentityFile ~/.ssh/acap-admin-key.pem
+{{- end }}
 
 # Host tapai-admin
     # HostName 13.251.46.169
