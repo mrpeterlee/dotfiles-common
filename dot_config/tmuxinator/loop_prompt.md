@@ -986,11 +986,16 @@ follow-up work in-band, only clean-ups.
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
-        gh pr list --author @me --state merged --limit 20 \
-          -R "$owner_repo" \
-          --json number,body,mergedAt,repository \
-          -q '.[] | select(.mergedAt > (now - 7*86400 | todate))
-                  | select(.body | test("Deferred P2s: (?!none)"; "i"))'
+        # `gh search` + `merged:>...` is server-side-filtered so
+        # the result set isn't truncated before the 7-day gate
+        # can apply — do NOT use `gh pr list --limit N`, which
+        # caps BEFORE the jq filter and drops in-range PRs
+        # (codex round-5 P2).
+        since=$(date -u -d '7 days ago' +%Y-%m-%d)
+        gh search prs --author @me --merged \
+          "repo:$owner_repo merged:>=$since" \
+          --json number,body,repository \
+          -q '.[] | select(.body | test("Deferred P2s: (?!none)"; "is"))'
       done
 
   For each PR, parse the `## Pre-PR review` block; for each P2
@@ -1017,7 +1022,8 @@ follow-up work in-band, only clean-ups.
           -R "$owner_repo" \
           --json number,title,body,repository,updatedAt \
           -q '.[] | select(.body
-                  | test("Pre-PR (behavioural gate|review).*(FAIL|bypassed|skipped)"; "i"))
+                  | test("Pre-PR (behavioural gate|review)"; "is"))
+                  | select(.body | test("FAIL|bypassed|skipped"; "is"))
                   | select((.updatedAt | fromdateiso8601) < (now - 7200))'
       done
 
@@ -1053,9 +1059,17 @@ follow-up work in-band, only clean-ups.
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
-        merged_branches=$(gh pr list --author @me --state merged \
-          --limit 30 -R "$owner_repo" --json headRefName \
-          -q '.[].headRefName')
+        # Use `gh search prs --merged` over a rolling window
+        # instead of `gh pr list --limit N`. Hard-capped limits
+        # truncate the result set before the join with worktree
+        # branches, so stale worktrees accumulate indefinitely
+        # once the merged-PR count exceeds the cap (codex
+        # round-5 P2). Window is generous: anything older than
+        # 60 days is unlikely to still have a worktree around.
+        since=$(date -u -d '60 days ago' +%Y-%m-%d)
+        merged_branches=$(gh search prs --author @me --merged \
+          "repo:$owner_repo merged:>=$since" \
+          --json headRefName -q '.[].headRefName')
         # For each worktree in $wt_repo, emit it if its branch is
         # in $merged_branches.
       done
@@ -1087,11 +1101,20 @@ follow-up work in-band, only clean-ups.
       gh pr view <n> -R <repo> --json state
 
   If state ∈ `{MERGED, CLOSED}`, record to the EXECUTE queue as a
-  `CronDelete` target. If the cron prompt does NOT name `-R
-  <repo>`, fall back to `gh pr view <n> --json state` in the
-  current working tree; log but do not fail if that 404s — such
-  crons are likely stale handoffs from an ancestor session and
-  get picked up by the 2-hour stale-marker sweep anyway.
+  `CronDelete` target.
+
+  **Repo-less cron handling.** If the cron prompt does NOT name
+  `-R <repo>` (pre-dates the §5 rule that requires `-R`), fall
+  back to `gh pr view <n> --json state` in the current working
+  tree. If that 404s, the cron references a PR this repo doesn't
+  have — record it to the EXECUTE queue as a `CronDelete` target
+  anyway. Rationale: such a cron will 404 every tick forever,
+  and it counts as a minute-level polling cron per idleness
+  condition #3, so leaving it in place makes the session
+  permanently non-idle (codex round-5 P1). The 2-hour stale-
+  marker sweep retires idle-stage files, not `CronList` rows,
+  so without active removal the orphan cron survives
+  indefinitely.
 
 - **B7 — Main clone has a feature branch checked out.**
 
@@ -1126,18 +1149,38 @@ the worktree, the retry fails on missing path and the `&&` skips
 `branch -D`, leaving the merged branch undeleted forever (codex
 round-4 P2).
 
-    # Worktree (ignore ENOENT on retry — already gone is fine):
-    git -C "<repo>" worktree remove --force "<path>" 2>/dev/null || true
+**Distinguish expected "already gone" from real failure.** Blanket
+`2>/dev/null || true` hides genuine errors (dirty tree, locked
+worktree, permission denied) that must reach the operator
+(codex round-5 P2). Capture stderr, match expected patterns,
+swallow only those:
 
-    # Branch (separate, also idempotent via -D which exits 1 if
-    # branch is absent; swallow that):
-    git -C "<repo>" branch -D "<name>" 2>/dev/null || true
+    # Worktree: expect "not a working tree" / "does not exist" / ENOENT
+    # on retry. Anything else is a real failure.
+    err=$(git -C "<repo>" worktree remove --force "<path>" 2>&1 1>/dev/null) || {
+      if echo "$err" | grep -qiE 'not a working tree|does not exist|no such file'; then
+        : # expected: already removed by prior halted attempt
+      else
+        printf 'B1 remove failed: %s: %s\n' "<path>" "$err" \
+          >> "$MARKER".errors
+      fi
+    }
 
-    # Clean up .git/worktrees/<slug> dir for the removed worktree
-    # in case `worktree remove` was skipped above (rare race):
+    # Branch: -D exits 1 with "not found" when branch is absent.
+    err=$(git -C "<repo>" branch -D "<name>" 2>&1 1>/dev/null) || {
+      if echo "$err" | grep -qiE 'not found|no such branch|not a valid ref'; then
+        : # expected: branch already deleted
+      else
+        printf 'B1 branch -D failed: %s: %s\n' "<name>" "$err" \
+          >> "$MARKER".errors
+      fi
+    }
+
+    # Prune leftover .git/worktrees/<slug> dir; always safe,
+    # exits 0 when nothing to prune.
     git -C "<repo>" worktree prune 2>/dev/null || true
 
-    # Cron polling loops for merged PRs:
+    # Cron polling loops for merged PRs (idempotent):
     CronDelete <cron_id>
 
 If ANY clean-up fails, write the error to
