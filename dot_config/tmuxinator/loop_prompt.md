@@ -856,33 +856,63 @@ loop.
    session's PR in a different repo would block this pane forever.
    Scope to this session's own branches only:
 
-       # Enumerate every worktree this session owns across repos
+       # Enumerate (repo, branch) pairs for every worktree this
+       # session owns. Emit "<repo-dir>\t<branch>" per line so the
+       # follow-up gh call can pass -R correctly — passing just
+       # the branch and running `gh pr list --head <branch>` in
+       # $PWD would miss a session-owned branch in a different
+       # repo (codex round-2 P1).
        for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
          [ -d "$wt_repo" ] || continue
-         git -C "$wt_repo" worktree list --porcelain 2>/dev/null
-       done | awk -v s="$(basename "$PWD")" '
-           /^worktree / { wt=$2 }
-           /^branch /   { if (wt ~ s) print substr($2, 12) }'
+         git -C "$wt_repo" worktree list --porcelain 2>/dev/null \
+           | awk -v s="$(basename "$PWD")" -v repo="$wt_repo" '
+               /^worktree / { wt=$2 }
+               /^branch /   { if (wt ~ s) printf "%s\t%s\n",
+                               repo, substr($2, 12) }'
+       done
 
-   For each resulting branch, run `gh pr list --head <branch>
-   --state open --json number,repository --limit 1`. If ALL
-   branches return `[]`, this session has no open PR. Sister
+   For each `<repo-dir>\t<branch>` pair, derive the `<owner>/<repo>`
+   remote and call:
+
+       owner_repo=$(git -C "<repo-dir>" remote get-url origin \
+         | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+       gh pr list --head "<branch>" -R "$owner_repo" \
+         --state open --json number,repository --limit 1
+
+   If ALL pairs return `[]`, this session has no open PR. Sister
    sessions' PRs are irrelevant — their polling crons live in
    their own Claude sessions, not ours.
 3. `CronList` has no entries whose prompt matches
    `pr-codex-watch|PR #[0-9]+|/loop 1m|Poll .* PR`  — i.e., no
    minute-level polling loops active in THIS session.
-4. No verification artefacts pending:
-   `${TELEGRAM_STATE_DIR}/mcp-reconnect.count` > 0 OR
-   `.claude/pre-pr/<head-sha>/verdict.json` == `in_progress`.
+4. No verification artefacts pending. Idleness REQUIRES all of:
+   - `${TELEGRAM_STATE_DIR}/mcp-reconnect.count` is missing OR its
+     integer value is `0` (non-zero means §0 is mid-reconnect).
+   - No `.claude/pre-pr/<head-sha>/verdict.json` exists with
+     `"verdict": "in_progress"` (in-progress means §4b is still
+     running on the current branch).
+
+   If EITHER artefact indicates pending work, the session is NOT
+   idle — do not run §7. Bullet 4 was inverted on round-1; the
+   presence of those signals means work is in flight, not that
+   we're done.
 
 ### Idempotency marker
 
-Compute the tick identifier as the most recent cron boundary floor:
+Compute the tick identifier as the most recent 30-minute cron
+boundary floor (the session fires at :00 and :30 per /loop). DO NOT
+preserve the current minute — that would produce a different marker
+on every retry within the same cron window and break the "skip if
+already serviced" guarantee:
 
-    TICK=$(date -u -d "$(date -u +%H:%M)  $(date -u +%Y-%m-%d)" \
-             +%Y%m%dT%H%M 2>/dev/null \
-           || date -u +%Y%m%dT%H00)   # 30-min floor; fallback hourly
+    min=$(date -u +%M)
+    floor=$(( min < 30 ? 0 : 30 ))
+    TICK=$(printf '%sT%s%02d' \
+             "$(date -u +%Y%m%d)" \
+             "$(date -u +%H)" \
+             "$floor")
+    # e.g., at 10:17 UTC → 20260424T1000
+    #       at 10:47 UTC → 20260424T1030
 
 and write marker `~/.claude/idle-stage/${TICK}` whose **content** is
 the current stage (`DISCOVER|EXECUTE|NOTIFY|DONE`). File presence
