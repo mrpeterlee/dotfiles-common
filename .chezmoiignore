@@ -1,7 +1,7 @@
 # README and documentation
 README.md
-AGENTS.md
-CLAUDE.md
+/AGENTS.md
+/CLAUDE.md
 LICENSE
 
 # CLI scripts (invoked from repo, not deployed to ~)
