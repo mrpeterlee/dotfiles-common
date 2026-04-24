@@ -274,12 +274,23 @@ artefact the rest of the flow consumes.
 ### Step 1 — Classify the change set
 
 **Accumulate surfaces, do not short-circuit.** For every file in
-`git diff --name-only --diff-filter=ACMR origin/<base>...HEAD`, walk
-the rules below and assign it the MOST SPECIFIC tag that matches.
-Mixed PRs (e.g., `src/foo.py` + `AGENTS.md`) get BOTH `code` and
-`prompt_like` in `surfaces`; Step 3 then runs the matching test
-profile for each tag. First-match-wins was wrong — reviewers caught
-this on the initial draft.
+`git diff --name-only --diff-filter=ACMRD origin/<base>...HEAD` —
+`ACMRD` is deliberate; the `D` (deleted) filter is in because
+removing a prompt file, script, or agent is itself a behaviour change
+that callers depend on — walk the rules below and assign each file
+the MOST SPECIFIC tag that matches. Mixed PRs (e.g., `src/foo.py` +
+`AGENTS.md`) get BOTH `code` and `prompt_like` in `surfaces`; Step 3
+then runs the matching test profile for each tag. First-match-wins
+was wrong — reviewers caught this on the initial draft.
+
+For deletions (files present in the diff as status `D`), tag the
+deleted path by its extension under the same rules and add a
+`deletion: true` marker to the per-file record. Step 2 treats a
+deletion as a caller-impact audit: "what code used to call this, and
+is every caller now updated?" Step 3 routes deletions through a
+caller-sweep profile: `rg "<basename>"` across the repo + a usages
+audit per the deleted symbol; the test expectation is that no
+surviving caller references the removed path.
 
 If `gstack-diff-scope` is installed (check: `command -v gstack-diff-scope`),
 source it first to get its baseline scope flags (`SCOPE_DOCS`,
@@ -325,12 +336,19 @@ next file):**
        .agents/claude/skills/**/SKILL.md
        .agents/claude/commands/**/*.md
 
-3. **`shell`** — standalone shell / chezmoi templates:
+3. **`shell`** — standalone shell:
 
        **/*.sh  **/*.bash  **/*.zsh
        **/executable_*.sh  **/run_once_*.sh
-       **/*.tmpl   (chezmoi — may render to shell OR config; tag both
-                   `shell` and `config` and run both test profiles)
+
+   **Template files** (`*.tmpl`, `*.j2`, `*.mustache`) are a special
+   case that breaks first-match-wins: render the template to its
+   target path with representative data, then re-run the tagging
+   rules on the rendered output. Copy every tag the rendered file
+   earns back onto the template. A `private_dot_ssh/config.tmpl`
+   that renders to OpenSSH config text picks up `config`; a
+   `private_dot_claude/hooks/some-hook.sh.tmpl` picks up `shell` and
+   `code`. Both test profiles run.
 
 4. **`code`** — source code subject to full TDD:
 
@@ -354,24 +372,36 @@ next file):**
    routing — false-positive-run is cheap; false-positive-skip ships
    untested behaviour.
 
-**Verdict computation.**
+**Verdict state machine.** `verdict.json` carries one of four
+terminal values plus an `in_progress` transient:
 
     surfaces = union(per_file_tag for each file)
 
     if surfaces == {"docs"}:
-        verdict = "skip"
+        verdict = "skip"              # terminal — fall through to §4a
         reason  = "docs-only: N files, no code/config/prompt surfaces"
     else:
-        verdict = "run"
+        verdict = "in_progress"       # transient — Step 3 rewrites
 
-One path to `skip`: every file ended up tagged `docs`. Any other
+Step 3 rewrites `verdict.json` when tests complete:
+
+- All profiles green + `pr-test-analyzer` clean + `superpowers:verification-before-completion`
+  CLAIM passes → `verdict = "pass"` (terminal, falls through to §4a).
+- Convergence exhausted or a profile's mandatory check refuses to go
+  green → `verdict = "fail"` (terminal, draft-PR path).
+- On abort / timeout → `verdict = "error"` (terminal, escalate).
+
+§4a consumes `verdict.json` and proceeds ONLY when `verdict ∈ {"pass",
+"skip"}`. `in_progress` blocks §4a; `fail` and `error` route to the
+draft-PR + Telegram escalation described below. There is exactly one
+path to `skip`: every file ended up tagged `docs`. Any other
 combination — even one config file alongside a hundred docs — runs
-the gate for the config surface and passes docs through as no-op.
+the gate for the non-docs surfaces and passes docs through as no-op.
 
-Write the verdict and manifest to `.claude/pre-pr/<head-sha>/verdict.json`:
+Manifest shape:
 
     {
-      "verdict": "run" | "skip",
+      "verdict": "skip" | "in_progress" | "pass" | "fail" | "error",
       "reason": "...",
       "surfaces": ["code", "prompt_like", "config", ...],
       "files_by_tag": {
@@ -382,6 +412,7 @@ Write the verdict and manifest to `.claude/pre-pr/<head-sha>/verdict.json`:
         "md_with_code":[],
         "docs":        ["docs/reference/.../plan.md"]
       },
+      "deletions":    ["old/script.sh"],
       "base_sha": "...",
       "head_sha": "..."
     }
@@ -502,6 +533,12 @@ clock per cycle. On exhaustion:
 Silent skip is forbidden. Same rule as §4a.6.
 
 ### Step 4 — Hand off to §4a
+
+Block here if `verdict.json` is `in_progress` — that means Step 3 has
+not finished rewriting the verdict; wait or restart Step 3 from the
+last artefact. If `verdict.json` is `fail` or `error`, take the draft-PR
+escalation path under Convergence above — do NOT proceed to §4a with
+a non-terminal-pass verdict.
 
 When `verdict.json` says `pass` (or `skip`), append these lines to the
 planned PR body before §4a runs:
