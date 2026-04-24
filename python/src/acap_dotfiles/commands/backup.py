@@ -12,14 +12,14 @@ import click
 
 from acap_dotfiles.core.chezmoi import ChezmoiError, Wrapper, discover_binary
 from acap_dotfiles.core.config import DotsConfig
-from acap_dotfiles.core.git import GitError, diff_name_only
+from acap_dotfiles.core.git import GitError, status_porcelain
 from acap_dotfiles.io.exec import stream
 
 
 @click.command()
 @click.pass_context
 def backup(ctx: click.Context) -> None:
-    """chezmoi re-add then `git diff --name-only` to preview commit."""
+    """chezmoi re-add then `git status --porcelain` to preview commit."""
     cfg = DotsConfig()
     try:
         binary = discover_binary()
@@ -37,10 +37,13 @@ def backup(ctx: click.Context) -> None:
         click.echo(f"chezmoi re-add failed (rc={rc})", err=True)
         sys.exit(rc)
 
+    # Use `git status --porcelain --untracked-files=all` (not `git diff --name-only HEAD`):
+    # chezmoi re-add can drop brand-new files into the source tree as untracked,
+    # which `git diff` would silently miss.
     try:
-        files = diff_name_only(cfg.home)
+        files = status_porcelain(cfg.home)
     except GitError as e:
-        click.echo(f"git diff failed: {e}", err=True)
+        click.echo(f"git status failed: {e}", err=True)
         sys.exit(2)
 
     if not files:
@@ -49,4 +52,4 @@ def backup(ctx: click.Context) -> None:
     click.secho(f"\nFiles updated ({len(files)}):", bold=True)
     for f in files:
         click.echo(f"  {f}")
-    click.echo("\nNext: cd ~/.files && git add -A && git commit -m '...' && git push")
+    click.echo(f"\nNext: cd {cfg.home} && git add -A && git commit -m '...' && git push")

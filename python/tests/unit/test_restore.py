@@ -145,6 +145,131 @@ def test_restore_non_tty_auto_injects_force_and_writes_stub(
     assert "[data]" in content
 
 
+def test_restore_dry_run_passes_dry_run_to_chezmoi(
+    fake_process: object, tmp_path: Path, monkeypatch: object
+) -> None:
+    """`dots --dry-run restore` must inject --dry-run into both init and apply.
+
+    Regression test for the codex P2 finding on `dots restore`: previously the
+    Wrapper was constructed without dry_run, so the safety flag was silently
+    dropped. apply/update/backup pass it through; restore must too.
+    """
+    monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
+    fake_process.register(  # type: ignore[attr-defined]
+        [
+            "/usr/bin/chezmoi",
+            "--no-tty",
+            "--no-pager",
+            "--color=off",
+            "--progress=false",
+            "--source",
+            str(tmp_path),
+            "init",
+            "--dry-run",
+        ],
+        stdout=b"",
+    )
+    fake_process.register(  # type: ignore[attr-defined]
+        [
+            "/usr/bin/chezmoi",
+            "--no-tty",
+            "--no-pager",
+            "--color=off",
+            "--progress=false",
+            "--source",
+            str(tmp_path),
+            "apply",
+            "--dry-run",
+        ],
+        stdout=b"",
+    )
+    with (
+        patch(
+            "acap_dotfiles.commands.restore.discover_binary",
+            return_value=Path("/usr/bin/chezmoi"),
+        ),
+        patch("acap_dotfiles.commands.restore._is_tty", return_value=True),
+    ):
+        result = CliRunner().invoke(main, ["--dry-run", "restore"])
+    assert result.exit_code == 0
+
+
+def test_restore_stub_chezmoi_toml_contains_required_keys(
+    fake_process: object, tmp_path: Path, monkeypatch: object
+) -> None:
+    """Non-TTY stub chezmoi.toml must populate every key the templates dereference.
+
+    Regression test for the codex P1 finding on `dots restore`: previously the
+    stub only set ``email``, but repo templates dereference ``.pkgmgr`` /
+    ``.name`` / ``.isWindows`` / ``.hasOp`` / ``.isLinux`` / ``.isDarwin`` /
+    ``.isWSL`` / ``.opSignedIn`` / ``.osid`` / ``.arch`` / ``.hostname`` /
+    ``.personal``, causing ``chezmoi apply --force`` to abort with template
+    errors on a fresh CI host.
+    """
+    monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))  # type: ignore[attr-defined]
+    fake_process.register(  # type: ignore[attr-defined]
+        [
+            "/usr/bin/chezmoi",
+            "--no-tty",
+            "--no-pager",
+            "--color=off",
+            "--progress=false",
+            "--source",
+            str(tmp_path),
+            "init",
+        ],
+        stdout=b"",
+    )
+    fake_process.register(  # type: ignore[attr-defined]
+        [
+            "/usr/bin/chezmoi",
+            "--no-tty",
+            "--no-pager",
+            "--color=off",
+            "--progress=false",
+            "--source",
+            str(tmp_path),
+            "apply",
+            "--force",
+        ],
+        stdout=b"",
+    )
+    with (
+        patch(
+            "acap_dotfiles.commands.restore.discover_binary",
+            return_value=Path("/usr/bin/chezmoi"),
+        ),
+        patch("acap_dotfiles.commands.restore._is_tty", return_value=False),
+    ):
+        result = CliRunner().invoke(main, ["restore"])
+    assert result.exit_code == 0
+    stub_path = fake_home / ".config" / "chezmoi" / "chezmoi.toml"
+    content = stub_path.read_text()
+    # All keys the chezmoi templates dereference must be present
+    for key in (
+        "email",
+        "name",
+        "hostname",
+        "personal",
+        "osid",
+        "arch",
+        "isLinux",
+        "isDarwin",
+        "isWindows",
+        "isWSL",
+        "pkgmgr",
+        "hasOp",
+        "opSignedIn",
+    ):
+        assert f"{key} =" in content, f"stub chezmoi.toml is missing key: {key}"
+    # Booleans must serialize as bare true/false (chezmoi rejects "true" / "false" strings)
+    assert "isLinux = true" in content or "isLinux = false" in content
+    assert "hasOp = true" in content or "hasOp = false" in content
+
+
 def test_restore_missing_chezmoi_binary_exits_2(tmp_path: Path, monkeypatch: object) -> None:
     """Missing chezmoi binary → exit 2."""
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]

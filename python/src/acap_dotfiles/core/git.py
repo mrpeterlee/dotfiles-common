@@ -27,6 +27,41 @@ def diff_name_only(cwd: Path, ref: str = "HEAD") -> list[str]:
     return [ln for ln in out.stdout.splitlines() if ln.strip()]
 
 
+def status_porcelain(cwd: Path) -> list[str]:
+    """Return changed paths from `git status --porcelain --untracked-files=all`.
+
+    Includes both tracked modifications (M, A, D, R, C, U) and untracked files
+    (??). Each entry is the file path with the porcelain status prefix stripped
+    (e.g. `dot_zshrc`, not ` M dot_zshrc`). Rename entries (`R  old -> new`)
+    return the new path.
+
+    Used by `dots backup` so brand-new files added by `chezmoi re-add` show up
+    in the preview — `git diff --name-only HEAD` would silently miss them.
+
+    Raises GitError on non-zero exit (e.g. not a git repo).
+    """
+    out = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if out.returncode != 0:
+        raise GitError(out.stderr.strip() or "git status failed")
+    paths: list[str] = []
+    for line in out.stdout.splitlines():
+        if not line.strip():
+            continue
+        # Porcelain v1 format: 2-char status, space, path. Renames use ` -> `.
+        path = line[3:] if len(line) > 3 else ""
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if path:
+            paths.append(path)
+    return paths
+
+
 def remote_url(cwd: Path, name: str = "origin") -> str | None:
     """Return the URL of the named remote, or None if no such remote is configured."""
     out = subprocess.run(

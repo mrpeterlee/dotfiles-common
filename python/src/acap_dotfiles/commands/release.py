@@ -11,6 +11,10 @@ import click
 from acap_dotfiles.core.config import DotsConfig
 
 VERSION_RE = re.compile(r'^__version__ = "(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?"$', re.MULTILINE)
+# Match the static `version = "..."` line under [project] in pyproject.toml.
+# Anchored to start-of-line and the literal `version =` to avoid colliding with
+# `requires-python` / dep version specifiers further down the file.
+PYPROJECT_VERSION_RE = re.compile(r'^version = "[^"]+"$', re.MULTILINE)
 
 
 def _bump(major: int, minor: int, patch: int, pre: int | None, level: str) -> str:
@@ -64,7 +68,44 @@ def cut(level: str) -> None:
     new = _bump(major, minor, patch, pre, level)
     init_py.write_text(VERSION_RE.sub(f'__version__ = "{new}"', text))
 
-    subprocess.run(["git", "add", str(init_py)], cwd=str(cfg.home), check=True)
+    # Also bump pyproject.toml's static `version = "..."` line so wheel
+    # metadata + `dots --version` match the tagged release. Codex P2 r1: the
+    # T14 "release cut" originally only touched __init__.py, leaving the build
+    # backend reading the stale 0.1.0 pin out of pyproject.toml.
+    pyproject_toml = cfg.home / "python" / "pyproject.toml"
+    uv_lock = cfg.home / "python" / "uv.lock"
+    add_paths: list[str] = [str(init_py)]
+    if pyproject_toml.is_file():
+        py_text = pyproject_toml.read_text()
+        new_py_text, n = PYPROJECT_VERSION_RE.subn(f'version = "{new}"', py_text, count=1)
+        if n != 1:
+            click.echo(
+                f'could not locate `version = "..."` line in {pyproject_toml}',
+                err=True,
+            )
+            sys.exit(2)
+        pyproject_toml.write_text(new_py_text)
+        add_paths.append(str(pyproject_toml))
+        # Re-lock so uv.lock records the new editable version. Best-effort:
+        # some test/dev environments don't have the `uv` binary on PATH; skip
+        # the add in that case rather than fail the cut.
+        lock_rc = subprocess.run(
+            ["uv", "lock"],
+            cwd=str(cfg.home / "python"),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if lock_rc.returncode == 0 and uv_lock.is_file():
+            add_paths.append(str(uv_lock))
+        elif lock_rc.returncode != 0:
+            click.echo(
+                f"warning: `uv lock` failed (rc={lock_rc.returncode}); "
+                f"uv.lock not staged. stderr: {lock_rc.stderr.strip()}",
+                err=True,
+            )
+
+    subprocess.run(["git", "add", *add_paths], cwd=str(cfg.home), check=True)
     subprocess.run(
         ["git", "commit", "-m", f"chore(release): bump to {new}"],
         cwd=str(cfg.home),

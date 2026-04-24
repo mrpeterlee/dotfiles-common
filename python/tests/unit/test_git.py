@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from acap_dotfiles.core.git import diff_name_only, remote_url
+from acap_dotfiles.core.git import diff_name_only, remote_url, status_porcelain
 
 
 @pytest.fixture
@@ -40,3 +40,29 @@ def test_remote_url_returns_none_for_no_remote(repo: Path) -> None:
 def test_remote_url_after_setting(repo: Path) -> None:
     subprocess.run(["git", "remote", "add", "origin", "git@host:p/r.git"], cwd=repo, check=True)
     assert remote_url(repo) == "git@host:p/r.git"
+
+
+def test_status_porcelain_includes_untracked_and_modified(repo: Path) -> None:
+    """status_porcelain must surface untracked files (not just diffs vs HEAD).
+
+    Regression test for the codex P2 finding on `dots backup`: chezmoi re-add
+    can drop brand-new files into the source tree as untracked, and
+    `git diff --name-only HEAD` would silently miss them.
+    """
+    # Modify a tracked file
+    (repo / "a.txt").write_text("changed")
+    # Add a new untracked file
+    (repo / "untracked.txt").write_text("brand new")
+    # And a nested untracked file under a new subdir (--untracked-files=all coverage)
+    nested = repo / "nested"
+    nested.mkdir()
+    (nested / "deep.txt").write_text("deep")
+
+    result = status_porcelain(repo)
+    assert "a.txt" in result
+    assert "untracked.txt" in result
+    assert "nested/deep.txt" in result
+    # diff_name_only by contrast misses the untracked entries
+    diff_only = diff_name_only(repo)
+    assert "untracked.txt" not in diff_only
+    assert "nested/deep.txt" not in diff_only
