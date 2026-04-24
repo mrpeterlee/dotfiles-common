@@ -15,6 +15,20 @@ jobs:
       - name: Run plaintext gate
         run: ./tests/hygiene/test_no_org_plaintext.sh
 
+  agent-config-hygiene:
+    name: Agent config hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+      - name: Skills present
+        run: ./tests/hygiene/test_claude_skills_present.sh
+      - name: MCP servers valid
+        run: ./tests/hygiene/test_mcp_servers_valid.sh
+      - name: No ~/.agents references
+        run: ./tests/hygiene/test_no_agents_refs.sh
+
   render-matrix:
     name: Chezmoi render (${{ matrix.os }})
     needs: no-org-plaintext
