@@ -59,6 +59,16 @@ def _contains_mutating_verb(args: Sequence[str]) -> bool:
     rate to eliminate the class of "is this arg a verb or an operand?" parsing
     bugs that plagued the prior _first_non_option / _VALUE_TAKING_GLOBALS
     design (codex caught 3 P1s in 3 review rounds).
+
+    Accepted limitation (codex P2 round 5): `chezmoi git -- <git-mutating-args>`
+    such as `git -- add foo` does NOT inject --dry-run because the git verbs
+    (`add`, `commit`, `push`, `rm`, `mv`, `reset`) live in chezmoi's
+    passthrough region. Users who need dry-run on git passthroughs should pass
+    `--dry-run` themselves to git, e.g. `chezmoi git -- add --dry-run foo`.
+    Adding a separate _GIT_MUTATING_VERBS set was considered and rejected on
+    YAGNI grounds: `chezmoi git --` is rarely combined with `--dry-run`, and
+    the passthrough semantics are inherently outside the chezmoi --dry-run
+    abstraction.
     """
     for a in args:
         if a == "--":
