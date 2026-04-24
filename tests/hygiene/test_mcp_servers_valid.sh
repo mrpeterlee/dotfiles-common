@@ -3,7 +3,7 @@
 # either a "command" (stdio transport) or a "url" (http/sse transport).
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="${1:-$(git rev-parse --show-toplevel)}"
 MANIFEST="$REPO_ROOT/mcp/servers.json"
 
 if [[ ! -f "$MANIFEST" ]]; then

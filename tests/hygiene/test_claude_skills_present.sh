@@ -3,7 +3,7 @@
 # After P2 absorption, these skill files MUST be present in the .files source tree.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="${1:-$(git rev-parse --show-toplevel)}"
 
 required=(
   "dot_claude/skills/git-workflow/SKILL.md"
