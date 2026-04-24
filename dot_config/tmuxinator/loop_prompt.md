@@ -273,24 +273,32 @@ artefact the rest of the flow consumes.
 
 ### Step 1 — Classify the change set
 
-**Accumulate surfaces, do not short-circuit.** For every file in
-`git diff --name-only --diff-filter=ACMRD origin/<base>...HEAD` —
-`ACMRD` is deliberate; the `D` (deleted) filter is in because
-removing a prompt file, script, or agent is itself a behaviour change
-that callers depend on — walk the rules below and assign each file
-the MOST SPECIFIC tag that matches. Mixed PRs (e.g., `src/foo.py` +
-`AGENTS.md`) get BOTH `code` and `prompt_like` in `surfaces`; Step 3
-then runs the matching test profile for each tag. First-match-wins
-was wrong — reviewers caught this on the initial draft.
+**Accumulate surfaces, do not short-circuit.** The classifier must
+use a **status-bearing** diff so deletions are detectable. Run:
 
-For deletions (files present in the diff as status `D`), tag the
-deleted path by its extension under the same rules and add a
-`deletion: true` marker to the per-file record. Step 2 treats a
-deletion as a caller-impact audit: "what code used to call this, and
-is every caller now updated?" Step 3 routes deletions through a
-caller-sweep profile: `rg "<basename>"` across the repo + a usages
-audit per the deleted symbol; the test expectation is that no
-surviving caller references the removed path.
+    git diff --name-status --diff-filter=ACMRD origin/<base>...HEAD
+
+Each row is `<status>\t<path>` (for renames it is
+`<status>\t<old>\t<new>`). `ACMRD` is deliberate: the `D` (deleted)
+filter is included because removing a prompt file, script, or agent
+is itself a behaviour change that callers depend on. `--name-only`
+would drop the status letter, so the deletion branch below could
+never populate — codex caught this on round 4.
+
+For each row, assign the MOST SPECIFIC tag from the rules below to
+the resulting path (the new path for renames). Mixed PRs (e.g.,
+`src/foo.py` + `AGENTS.md`) get BOTH `code` and `prompt_like` in
+`surfaces`; Step 3 then runs the matching test profile for each tag.
+First-match-wins was wrong — reviewers caught this on the initial
+draft.
+
+For rows whose status is `D`, tag the deleted path by extension
+under the same rules and add `deletion: true` to the per-file
+record. Step 2 treats a deletion as a caller-impact audit: "what
+code used to call this, and is every caller now updated?" Step 3
+routes deletions through a caller-sweep profile: `rg "<basename>"`
+across the repo + a usages audit per the deleted symbol; the test
+expectation is that no surviving caller references the removed path.
 
 If `gstack-diff-scope` is installed (check: `command -v gstack-diff-scope`),
 source it first to get its baseline scope flags (`SCOPE_DOCS`,
@@ -336,7 +344,21 @@ next file):**
        .agents/claude/skills/**/SKILL.md
        .agents/claude/commands/**/*.md
 
-3. **`shell`** — standalone shell:
+3. **`code`** — source code subject to full TDD. Runs BEFORE `shell`
+   so that hook scripts and other "shell but needs code-level
+   scrutiny" files get the full TDD + `pr-test-analyzer` path, not
+   just `shellcheck`:
+
+       **/*.py  **/*.ts  **/*.tsx  **/*.js  **/*.go  **/*.rs
+       **/*.java  **/*.kt  **/*.rb  **/*.swift  **/*.cs  **/*.cpp
+       **/Makefile  **/pyproject.toml  **/package.json
+       **/uv.lock  **/poetry.lock  **/requirements*.txt
+       .claude/hooks/**          (shell or JS, still source)
+       **/scripts/**/*.{sh,bash,js,ts,py}   (project-level scripts
+                                             gated at code level)
+
+4. **`shell`** — standalone shell that is NOT under `.claude/hooks/`
+   or `scripts/`:
 
        **/*.sh  **/*.bash  **/*.zsh
        **/executable_*.sh  **/run_once_*.sh
@@ -347,16 +369,9 @@ next file):**
    rules on the rendered output. Copy every tag the rendered file
    earns back onto the template. A `private_dot_ssh/config.tmpl`
    that renders to OpenSSH config text picks up `config`; a
-   `private_dot_claude/hooks/some-hook.sh.tmpl` picks up `shell` and
-   `code`. Both test profiles run.
-
-4. **`code`** — source code subject to full TDD:
-
-       **/*.py  **/*.ts  **/*.tsx  **/*.js  **/*.go  **/*.rs
-       **/*.java  **/*.kt  **/*.rb  **/*.swift  **/*.cs  **/*.cpp
-       **/Makefile  **/pyproject.toml  **/package.json
-       **/uv.lock  **/poetry.lock  **/requirements*.txt
-       .claude/hooks/**
+   `private_dot_claude/hooks/some-hook.sh.tmpl` picks up `code`
+   (because the rendered output lives under `.claude/hooks/`).
+   Both test profiles run.
 
 5. **`md_with_code`** — otherwise-inert markdown whose diff hunks
    contain fenced ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ```
@@ -386,7 +401,9 @@ terminal values plus an `in_progress` transient:
 Step 3 rewrites `verdict.json` when tests complete:
 
 - Every profile for every non-empty bucket in `files_by_tag` passed,
-  AND if `code ∈ surfaces` then `pr-test-analyzer` returned clean,
+  AND if `code ∈ surfaces` then `pr-test-analyzer` returned no
+  CRITICAL or HIGH findings (MEDIUM / LOW are deferred P2s in the
+  PR body, not blockers — consistent with the triage rule below),
   AND `superpowers:verification-before-completion` CLAIM passes →
   `verdict = "pass"` (terminal, falls through to §4a).
 - Convergence exhausted or a profile's mandatory check refuses to go
@@ -579,13 +596,25 @@ planned PR body before §4a runs:
 `codex review` has no `--append-prompt` (its supported flags are
 `--base`, `--commit`, `--title`, `--uncommitted`, `--config`,
 `--enable`, `--disable`, plus one positional `[PROMPT]` that is
-mutually exclusive with `--base`). Pass artefacts to codex by
-writing them to a location in the worktree that codex's sandbox can
-read: `.claude/pre-pr/<head-sha>/usages.md`. Codex runs with
-`-C $_REPO_ROOT` read-only sandbox access, so it can `Read` or `cat`
-the file during review if the session's Step 4 PR-body snippet above
-names the path. The two gates reinforce each other via shared
-worktree artefacts, not a CLI flag.
+mutually exclusive with `--base`). Codex also runs BEFORE
+`gh pr create`, so there is no PR body it can read. To actually
+surface the usages doc to codex:
+
+1. **Stage and commit** the `.claude/pre-pr/<head-sha>/` artefacts
+   (usages.md, verdict.json, test logs) onto the feature branch as
+   part of the final pre-review push. Codex then sees `usages.md`
+   as a new `.md` file in the diff it reviews and can reason about
+   the described usages against the code hunks that land alongside
+   it. The artefacts are git-tracked, gitignored in main via
+   `.gitignore`, and cleaned up on merge.
+2. **Alternative** (when artefacts must not land on the feature
+   branch): run `codex review --base <base>` for the diff review
+   first, then a secondary `codex exec` pass with the usages.md
+   path in its prompt for targeted follow-up. Two calls, more
+   tokens, only use if policy forbids committing the artefacts.
+
+Default path is #1. The two gates reinforce each other via shared
+git-tracked artefacts, not via a CLI flag and not via the PR body.
 
 ### Emergency skip
 
