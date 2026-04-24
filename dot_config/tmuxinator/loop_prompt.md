@@ -59,8 +59,10 @@ so the operator sees the gap closed.
 
 ### Retry budget + fallback
 
-Persist a counter at `${XDG_RUNTIME_DIR:-/tmp}/telegram-mcp-reconnect.count`
-(atomic write, integer).
+Persist a counter at `${TELEGRAM_STATE_DIR:?}/mcp-reconnect.count`
+(atomic write, integer). Key it by `$TELEGRAM_STATE_DIR` — which is
+already per-session — not a shared host path, so concurrent Claude
+panes on the same host don't cross-wire their retry budgets.
 
 - Increment at every tick where detection fires.
 - Reset to `0` on the first successful post-reconnect `reply`.
@@ -80,8 +82,9 @@ Persist a counter at `${XDG_RUNTIME_DIR:-/tmp}/telegram-mcp-reconnect.count`
   succeeds AND then fails again.
 
 If `telegram-fallback.sh` itself errors (missing, token unset, HTTP
-non-200), log one line to `journalctl --user -t loop-prompt-mcp-guard`
-and continue — do not spam the local TTY.
+non-200), emit one line via `logger -t loop-prompt-mcp-guard -p user.warning "<reason>"`
+(journald ingests it — `journalctl` is the read path) and continue —
+do not spam the local TTY.
 
 ### Why this shape
 

@@ -44,11 +44,19 @@ if [[ -z "$chat_id" ]]; then
   exit 2
 fi
 
-http_code=$(curl -sS -o /tmp/telegram-fallback.$$.body -w '%{http_code}' \
-  "https://api.telegram.org/bot${token}/sendMessage" \
-  --data-urlencode "chat_id=${chat_id}" \
-  --data-urlencode "text=${msg}" \
-  --data-urlencode "disable_web_page_preview=true" 2>/dev/null || echo "000")
+# Keep the bot token out of argv. `curl -K -` reads config (including the
+# URL) from stdin, so `ps` / audit logs only see `curl -sS -K -`.
+url="https://api.telegram.org/bot${token}/sendMessage"
+http_code=$(printf '%s\n' \
+    "silent" \
+    "show-error" \
+    "url = \"${url}\"" \
+    "data-urlencode = \"chat_id=${chat_id}\"" \
+    "data-urlencode = \"text=${msg}\"" \
+    "data-urlencode = \"disable_web_page_preview=true\"" \
+    "output = \"/tmp/telegram-fallback.$$.body\"" \
+    "write-out = \"%{http_code}\"" \
+  | curl -K - 2>/dev/null || echo "000")
 
 body=$(cat /tmp/telegram-fallback.$$.body 2>/dev/null || true)
 rm -f /tmp/telegram-fallback.$$.body
