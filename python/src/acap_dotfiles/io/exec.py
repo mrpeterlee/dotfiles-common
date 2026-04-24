@@ -8,6 +8,7 @@ the child via process group.
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -30,7 +31,13 @@ def stream(
 
     Returns the child's exit code. Forwards SIGINT to the child if Python
     receives it (so Ctrl-C gracefully terminates chezmoi mid-apply).
+
+    When `env` is provided, it is MERGED with `os.environ` (mirroring
+    `Wrapper.run`'s behavior) so long apply/update/init runs don't lose
+    PATH, HOME, SSH_AUTH_SOCK, and credential tokens. Pass `env=None`
+    (default) to inherit os.environ unchanged.
     """
+    merged_env = {**os.environ, **env} if env is not None else None
     proc = subprocess.Popen(
         list(argv),
         stdout=subprocess.PIPE,
@@ -38,7 +45,7 @@ def stream(
         text=True,
         bufsize=1,  # line-buffered
         cwd=str(cwd) if cwd else None,
-        env=env,
+        env=merged_env,
         # Same process group so SIGINT propagates naturally
         start_new_session=False,
     )

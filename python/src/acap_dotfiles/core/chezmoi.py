@@ -46,6 +46,18 @@ _CANONICAL_ARGS: tuple[str, ...] = (
 )
 
 
+def _first_non_option(args: Sequence[str]) -> str | None:
+    """Return the first arg that doesn't start with `-` (i.e. the verb).
+
+    chezmoi accepts global flags (e.g. `--debug`, `-v`) before the verb, so
+    `args[0]` is not a reliable indicator of which subcommand will run.
+    """
+    for a in args:
+        if not a.startswith("-"):
+            return a
+    return None
+
+
 class ChezmoiError(RuntimeError):
     """Raised when chezmoi exits non-zero (or the binary cannot be found)."""
 
@@ -82,7 +94,10 @@ def discover_binary() -> Path:
         home / ".local" / "bin" / f"chezmoi{suffix}",
         home / "bin" / f"chezmoi{suffix}",
     ):
-        if candidate.is_file():
+        # shutil.which() filters by executability; mirror that for fallbacks
+        # so we don't return a non-executable file and fail later with
+        # PermissionError. Env override stays is_file()-only — operator-controlled.
+        if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
     raise ChezmoiError(
         "chezmoi binary not found. Install with `curl -fsLS get.chezmoi.io | sh -b ~/.local/bin`."
@@ -102,7 +117,8 @@ class Wrapper:
         if self.source is not None:
             argv.extend(["--source", str(self.source)])
         argv.extend(args)
-        if self.dry_run and args and args[0] in _MUTATING_VERBS and "--dry-run" not in args:
+        verb = _first_non_option(args)
+        if self.dry_run and verb in _MUTATING_VERBS and "--dry-run" not in args:
             argv.append("--dry-run")
         return argv
 

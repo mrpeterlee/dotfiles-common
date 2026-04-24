@@ -23,3 +23,31 @@ def test_stream_propagates_nonzero_exit() -> None:
         on_stderr=lambda _: None,
     )
     assert rc == 42
+
+
+def test_stream_env_merges_with_os_environ() -> None:
+    """Codex P2: passing `env={"FOO": "bar"}` must NOT wipe PATH/HOME/etc.
+
+    Replacing instead of merging breaks long apply/update/init runs that
+    rely on PATH, HOME, SSH_AUTH_SOCK, and credential tokens. This test
+    asserts the child sees both the inherited PATH and the injected FOO.
+    """
+    out_lines: list[str] = []
+    rc = stream(
+        [
+            sys.executable,
+            "-c",
+            "import os; print(os.environ.get('PATH', '<missing>')); "
+            "print(os.environ.get('FOO', '<missing>'))",
+        ],
+        on_stdout=out_lines.append,
+        on_stderr=lambda _: None,
+        env={"FOO": "bar"},
+    )
+    assert rc == 0
+    assert len(out_lines) == 2
+    # PATH must be inherited from os.environ — proves merge, not replace
+    assert out_lines[0] != "<missing>"
+    assert out_lines[0] != ""
+    # FOO must be the injected value — proves the override layer works
+    assert out_lines[1] == "bar"

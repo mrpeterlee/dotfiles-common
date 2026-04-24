@@ -125,5 +125,54 @@ def test_wrapper_dry_run_does_NOT_inject_flag_for_read_verbs(fake_process: objec
     w.run(["data"])  # would crash if --dry-run were injected
 
 
+def test_build_argv_dry_run_injects_when_global_flag_precedes_mutating_verb() -> None:
+    """Codex P1: `chezmoi --debug apply` must still get --dry-run.
+
+    Old logic only checked args[0]; with a global flag in front, the verb
+    moves to args[1] and the mutation would silently run for real.
+    """
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["--debug", "apply"])
+    assert "--dry-run" in argv
+    # And it should come after the user args, not in the middle of canonical args
+    assert argv[-1] == "--dry-run"
+
+
+def test_build_argv_dry_run_does_not_inject_for_read_verb_with_global_flag() -> None:
+    """`chezmoi -v data` should NOT get --dry-run (data is read-only)."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["-v", "data"])
+    assert "--dry-run" not in argv
+
+
+def test_build_argv_dry_run_still_works_for_bare_mutating_verb() -> None:
+    """Existing behavior: `apply` with no preceding flags still gets --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["apply"])
+    assert "--dry-run" in argv
+
+
+def test_discover_binary_skips_non_executable_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex P3: a non-executable ~/.local/bin/chezmoi must NOT be returned.
+
+    Returning it causes a later PermissionError. The function should treat
+    the candidate as absent and (since ~/bin is also missing) raise.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("DOTS_CHEZMOI_BIN", raising=False)
+    bindir = tmp_path / ".local" / "bin"
+    bindir.mkdir(parents=True)
+    fallback = bindir / "chezmoi"
+    fallback.write_text("#!/bin/sh\necho fallback")
+    fallback.chmod(0o644)  # readable but NOT executable
+    with (
+        patch("acap_dotfiles.core.chezmoi.shutil.which", return_value=None),
+        pytest.raises(ChezmoiError, match="chezmoi binary not found"),
+    ):
+        discover_binary()
+
+
 # Silence unused-import: shutil is referenced via the patch target string only.
 _ = shutil
