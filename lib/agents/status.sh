@@ -15,7 +15,7 @@ cmd_status() {
     info "Claude Code (~/.claude/)"
     check_file "$HOME/.claude/CLAUDE.md"
     check_file "$HOME/.claude/settings.json"
-    for cmd_file in "$SCRIPT_DIR"/dot_claude/commands/*.md; do
+    for cmd_file in "$SCRIPT_DIR"/private_dot_claude/commands/*.md; do
         [[ -f "$cmd_file" ]] || continue
         local name
         name=$(basename "$cmd_file")
