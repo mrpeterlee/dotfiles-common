@@ -1,0 +1,52 @@
+name: dots CLI
+
+on:
+  push:
+    branches: [main]
+    paths: ['python/**']
+  pull_request:
+    branches: [main]
+    paths: ['python/**']
+
+jobs:
+  unit:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        working-directory: python
+        run: uv pip install --system -e ".[dev]"
+      - name: Lint
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        working-directory: python
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src/acap_dotfiles/core src/acap_dotfiles/io
+      - name: Unit tests
+        working-directory: python
+        run: uv run pytest -q tests/unit/
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Install chezmoi
+        run: curl -fsLS get.chezmoi.io | sh -b /usr/local/bin
+      - name: Install dots
+        working-directory: python
+        run: uv pip install --system -e ".[dev]"
+      - name: Integration tests
+        working-directory: python
+        run: uv run pytest -q -m integration tests/integration/
