@@ -125,3 +125,10 @@ __pycache__/
 # AWS account IDs, infra IPs, etc.) that the org-plaintext regex
 # doesn't fully catch. Treat as session-state, like .claude/sessions/.
 private_dot_claude/teams/*/inboxes/
+
+# === P2.5 follow-up: channels/ runtime + access files ===
+# bot.pid is process state; private_access.json holds operator allowlist
+# (Telegram chat_ids etc.). Same structural intent as the existing
+# session-state guards.
+private_dot_claude/channels/*/bot.pid
+private_dot_claude/channels/*/private_access.json

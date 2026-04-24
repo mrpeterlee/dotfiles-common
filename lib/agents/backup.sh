@@ -170,7 +170,7 @@ cmd_backup() {
             echo "  $line"
         done
         echo ""
-        echo "  Next: run 'cd ~/.agents && git diff' to review"
+        echo "  Next: run 'cd "$SCRIPT_DIR" && git diff' to review"
         echo "        then 'git add <files> && git commit && git push'"
     else
         success "No changes in repo"
