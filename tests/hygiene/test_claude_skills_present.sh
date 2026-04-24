@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Regression guard: the original ~/.agents/cli silently dropped dot_claude/skills/.
+# Regression guard: the original ~/.agents/cli silently dropped private_dot_claude/skills/.
 # After P2 absorption, these skill files MUST be present in the .files source tree.
 set -euo pipefail
 
 REPO_ROOT="${1:-$(git rev-parse --show-toplevel)}"
 
 required=(
-  "dot_claude/skills/git-workflow/SKILL.md"
-  "dot_claude/skills/infra-verify/SKILL.md"
+  "private_dot_claude/skills/git-workflow/SKILL.md"
+  "private_dot_claude/skills/infra-verify/SKILL.md"
 )
 
 missing=0
