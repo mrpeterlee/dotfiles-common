@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+from importlib.metadata import entry_points
 
 import click
 
@@ -35,12 +36,25 @@ class LazyGroup(click.Group):
     ) -> None:
         super().__init__(*args, **kw)  # type: ignore[arg-type]
         self._lazy = dict(lazy_subcommands or {})
+        # Discover plugins via PEP 621 entry points (group="dots.commands"). An
+        # org-overlay wheel can register additional sub-verbs without modifying dots.
+        for ep in entry_points(group="dots.commands"):
+            self._lazy[ep.name] = f"{ep.module}:{ep.attr}"
+
+    def _discover_plugins(self) -> None:
+        """Refresh the entry-point-registered plugins. Called on every command lookup so
+        an org-overlay wheel installed after import (or a test that monkeypatches
+        `entry_points`) is picked up correctly."""
+        for ep in entry_points(group="dots.commands"):
+            self._lazy.setdefault(ep.name, f"{ep.module}:{ep.attr}")
 
     def list_commands(self, ctx: click.Context) -> list[str]:
+        self._discover_plugins()
         eager = super().list_commands(ctx)
         return sorted({*eager, *self._lazy})
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
+        self._discover_plugins()
         if name in self._lazy:
             module_path, attr = self._lazy[name].split(":", 1)
             module = importlib.import_module(module_path)
