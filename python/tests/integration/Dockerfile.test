@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 RUN apt-get update -qq && apt-get install -y -qq curl git \
-    && curl -fsLS get.chezmoi.io | sh -b /usr/local/bin \
+    && curl -fsLS get.chezmoi.io | sh -s -- -b /usr/local/bin \
     && apt-get clean
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv

@@ -6,6 +6,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case "${1:-}" in
     conda|agents) exec "${SCRIPT_DIR}/lib/cli-legacy.sh" "$@" ;;
+    help|-h|--help|"")
+        if command -v dots >/dev/null 2>&1; then
+            exec dots --help
+        else
+            exec "${SCRIPT_DIR}/lib/cli-legacy.sh" help
+        fi
+        ;;
     *)
         if ! command -v dots >/dev/null 2>&1; then
             echo "warning: \`dots\` not on PATH — falling back to legacy bash cli" >&2
