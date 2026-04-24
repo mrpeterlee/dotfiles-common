@@ -18,19 +18,23 @@
 version: 1
 entries:
   # --- common (every host) ---
-  - path: ~/.zshrc
+  # Paths reflect the actual chezmoi targets: zsh + git are XDG-relocated
+  # (dot_config/zsh/dot_zshrc, dot_config/git/config.tmpl), tmux source is
+  # at dot_config/tmux/tmux.conf (chezmoi treats the leading dir as XDG, not
+  # as a leading dot), and wezterm renders to home root via dot_wezterm.lua.
+  - path: ~/.config/zsh/.zshrc
     role: common
-  - path: ~/.zshenv
+  - path: ~/.config/zsh/.zshenv
     role: common
-  - path: ~/.gitconfig
+  - path: ~/.config/git/config
     role: common
-  - path: ~/.tmux.conf
+  - path: ~/.config/tmux/tmux.conf
     role: common
   - path: ~/.config/nvim/init.lua
     role: common
   - path: ~/.config/lazygit/config.yml
     role: common
-  - path: ~/.config/wezterm/wezterm.lua
+  - path: ~/.wezterm.lua
     role: common
 
   # --- claude / codex / gemini agent configs (common, deployed by P2.5) ---

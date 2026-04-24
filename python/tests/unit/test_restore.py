@@ -143,6 +143,12 @@ def test_restore_non_tty_auto_injects_force_and_writes_stub(
     assert stub_path.is_file(), "non-TTY should write stub chezmoi.toml"
     content = stub_path.read_text()
     assert "[data]" in content
+    # Codex round-4 P2: stub must include root-level sourceDir so subsequent
+    # direct chezmoi calls (e.g. `dots status` → `chezmoi managed`) resolve to
+    # cfg.home instead of chezmoi's default ~/.local/share/chezmoi.
+    assert f'sourceDir = "{tmp_path}"' in content
+    # And it must come BEFORE the [data] table (TOML root keys must precede tables).
+    assert content.index("sourceDir") < content.index("[data]")
 
 
 def test_restore_dry_run_passes_dry_run_to_chezmoi(

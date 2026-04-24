@@ -25,7 +25,11 @@ $ErrorActionPreference = "Stop"
 # ============================================================================
 
 $Repo = if ($env:CHEZMOI_REPO) { $env:CHEZMOI_REPO } else { "MrPeterLee/dotfiles" }
-$ScriptDir = $PSScriptRoot
+# This script now lives at lib/cli-legacy.ps1 (post-P3 rename). $PSScriptRoot
+# would point at lib/, but Test-LocalSource / Ensure-SourceLink expect
+# $ScriptDir to be the repo root (where .chezmoi.toml.tmpl lives). Walk up
+# one level to recover the legacy semantics.
+$ScriptDir = Split-Path -Parent $PSScriptRoot
 $ChezmoiConfigDir = Join-Path $env:USERPROFILE ".config\chezmoi"
 $DotfilesLink = Join-Path $env:USERPROFILE ".files"
 
