@@ -1173,20 +1173,34 @@ follow-up work in-band, only clean-ups.
   2. If it returns MERGED/CLOSED → enqueue `CronDelete`.
   3. If it 404s in the CURRENT repo, fall back to a broader
      probe: query every session-owned repo (`~/acap`, `~/alpha`,
-     `~/.files`, `~/tapai`) with `gh pr view <n> -R
-     <owner/repo>`. If ANY repo returns `OPEN`, the cron is
-     watching a live PR elsewhere — DO NOT delete it. If ALL
-     repos return 404 or the PR is MERGED/CLOSED, enqueue
-     `CronDelete`.
+     `~/.files`, `~/tapai`) with `gh pr view <n> -R <repo>`.
+     Count how many repos return `OPEN` for the same number.
+
+     - **Exactly ONE repo OPEN → keep the cron.** Unambiguous
+       match; the cron is polling a live PR elsewhere. Do NOT
+       delete.
+     - **ZERO repos OPEN (all 404 or MERGED/CLOSED) → enqueue
+       `CronDelete`.** No session-owned repo has an open PR
+       under this number.
+     - **TWO OR MORE repos OPEN → AMBIGUOUS.** PR numbers are
+       per-repo, so multiple repos can independently have
+       `#<n>` open; the cron prompt text alone doesn't tell
+       us which one it was watching (codex round-10 P2).
+       Record to `${MARKER}.ambiguous` with the candidate
+       repos, Telegram-reply ONCE ("cron polling PR #<n>
+       ambiguous across <repo-A>, <repo-B>; leaving in place"),
+       do NOT delete. Operator resolves manually. The ambiguous
+       cron remains in CronList, keeps idleness condition #3
+       false, and §7 is effectively parked in that session
+       until the operator acts — acceptable because the
+       alternative (auto-delete) can stop a live merge watcher.
 
   A CWD-only 404 does NOT prove the cron is stale — it could
-  be polling an open PR in another repo, and blindly deleting
-  it would silently stop the only merge watcher for that PR
-  (codex round-9 P1). Rationale for eventual deletion: an
-  all-404 cron references a PR no session-owned repo has; it
-  will 404 every tick forever, lock idleness via condition #3,
-  and the 2-hour idle-stage sweep retires markers, not
-  `CronList` rows.
+  be polling an open PR in another repo (codex round-9 P1).
+  Rationale for deletion on the ZERO-OPEN branch: no session-
+  owned repo has the number OPEN; the cron will 404 every tick
+  forever, lock idleness via condition #3, and the 2-hour
+  idle-stage sweep retires markers, not `CronList` rows.
 
 - **B7 — Main clone has a feature branch checked out.**
 
@@ -1297,7 +1311,9 @@ and let them run `/reflect` out-of-band.
   idle tick (every 30 min) would Telegram-spam the operator until
   they run `/reflect` out-of-band (codex round-9 P3):
 
-      NUDGE=~/.claude/idle-harvested/${SESSION}/reflect-nudge
+      NUDGE_DIR=~/.claude/idle-harvested/${SESSION}
+      NUDGE="$NUDGE_DIR/reflect-nudge"
+      mkdir -p "$NUDGE_DIR"    # A1 may never have created it
       # Nudge at most once per 6 hours
       if [ ! -f "$NUDGE" ] || \
          [ $(( $(date +%s) - $(stat -c %Y "$NUDGE") )) -ge 21600 ]; then
