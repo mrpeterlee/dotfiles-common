@@ -31,7 +31,7 @@ exclude=(
   ':!.claude/CLAUDE.md'
   ':!.git/**'
   ':!dot_codex/skills/dot_system/plugin-creator/**'
-  ':!lib/agents/**'
+  ':!lib/agents/backup.sh'  # narrowed: only backup.sh has the cosmetic ~/.agents string (now refactored, but kept for safety)
 )
 
 bad=0
