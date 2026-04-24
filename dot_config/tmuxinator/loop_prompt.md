@@ -335,15 +335,26 @@ and for precision on the `config` split that the tree performs but
 
 **Templates are a pre-classifier special case.** Before applying the
 per-file rules below, if the path ends in `.tmpl`, `.j2`, or
-`.mustache`, render it to its target path with representative data
-(`chezmoi cat` for chezmoi sources; `jinja2` / `mustache` for
-others), then tag based on the rendered output. Copy every tag the
-rendered file earns back onto the template itself. A
-`private_dot_ssh/config.tmpl` rendering to OpenSSH config text picks
-up `config`; a `private_dot_claude/hooks/some-hook.sh.tmpl` picks up
-`code` (via `.claude/hooks/**`); a `private_dot_claude/docs/note.md.tmpl`
-picks up `docs`. This special case runs before rules 1-6 so every
-template lands in the right bucket regardless of shell content.
+`.mustache` AND its diff status is not `D` (deleted):
+
+- Render it to its target path with representative data (`chezmoi
+  cat` for chezmoi sources; `jinja2` / `mustache` for others), then
+  tag based on the rendered output. Copy every tag the rendered
+  file earns back onto the template itself. A
+  `private_dot_ssh/config.tmpl` rendering to OpenSSH config text
+  picks up `config`; a `private_dot_claude/hooks/some-hook.sh.tmpl`
+  picks up `code` (via `.claude/hooks/**`); a
+  `private_dot_claude/docs/note.md.tmpl` picks up `docs`.
+
+If the template is DELETED (status `D`) or its OLD path is missing
+(status `R<score>`, old path), render the OLD revision via
+`git show <base>:<old-path> | chezmoi execute-template` to recover
+what it used to produce, then classify normally. This keeps deleted
+templates routed through the caller-sweep profile instead of
+failing classification because the worktree file no longer exists.
+
+This special case runs before rules 1-6 so every template lands in
+the right bucket regardless of shell content.
 
 **Per-file tagging rules (pick the FIRST rule that matches this
 file — do NOT stop walking the file list after a hit; continue to the
@@ -597,26 +608,44 @@ it does not pick one. Keep artefacts under
   file's own convention declares is present; intra-repo links
   resolve (`rg '\]\([./]'` then check target exists); token count
   fits the host's context budget. (b) **smoke loop** (when the
-  change affects a decision rule, not just prose): craft one fixture
-  input that exercises the new rule, dispatch a single-turn `Skill`
-  invocation or `claude -p` sub-session with the edited prompt,
-  assert the expected terminal state (a section referenced, a tool
+  change affects a decision rule, not just prose): the test MUST
+  bind to the edited worktree copy, not the default / already-loaded
+  copy. Inject the file explicitly:
+    - For a Claude skill surface: `claude -p "<fixture prompt>"
+      --append-system-prompt "$(cat <worktree path to edited file>)"`
+      so the sub-session sees the new rules.
+    - For `loop_prompt.md` or similar tmuxinator-driven prompts:
+      `claude -p "<fixture>" --append-system-prompt "$(cat <worktree path>)"`
+      and assert on the response. The default `claude -p` loads
+      no operator prompt, so without `--append-system-prompt` the
+      edited rule is never exercised.
+  Assert the expected terminal state (a section referenced, a tool
   called, a verdict line emitted). Do NOT chase golden-behavioural
   diffs — too brittle.
 - **Tag `md_with_code`** → extract every construct rule 5 counted
-  as code-in-markdown; prove each at least parses:
-  - Fenced `bash`/`sh` blocks → `bash -n`.
-  - Fenced `python` / `py` blocks → `python -m py_compile`.
-  - Fenced `yaml` / `yml` blocks → `yq '.'`.
-  - Fenced `json` blocks → `jq .`.
-  - Fenced `ts` / `tsx` blocks → `tsc --noEmit --allowJs` (or
-    `deno check` / `bunx tsc --noEmit` — whichever is installed).
-  - Fenced `js` blocks → `node --check`.
-  - Fenced `dockerfile` blocks → write to a temp file + `hadolint`;
-    if hadolint missing, at least `docker build --check -` via
-    stdin.
-  - Leading `$ `-prefixed CLI snippets → strip the prompt and run
-    `shellcheck -` on the result (catches command typos, missing
+  as code-in-markdown **to a temp file** under
+  `.claude/pre-pr/<head-sha>/extracted/<file-basename>.<n>.<ext>`
+  first, then prove each at least parses. The extract-to-temp-file
+  step is mandatory — `python -m py_compile` and `tsc --noEmit`
+  both require file paths and will otherwise either error on
+  missing args (`py_compile`) or silently typecheck the enclosing
+  project instead of the snippet (`tsc`):
+  - Fenced `bash`/`sh` blocks → extract to `*.sh`; `bash -n *.sh`.
+  - Fenced `python` / `py` blocks → extract to `*.py`;
+    `python -m py_compile *.py`.
+  - Fenced `yaml` / `yml` blocks → pipe directly to `yq '.'`.
+  - Fenced `json` blocks → pipe directly to `jq .`.
+  - Fenced `ts` / `tsx` blocks → extract to `*.ts` with an adjacent
+    `tsconfig.json` isolating the snippet (`{"compilerOptions":
+    {"noEmit":true,"allowJs":true,"skipLibCheck":true}}`); run
+    `tsc --noEmit -p <that-config>`. Or `deno check *.ts` if deno
+    is installed.
+  - Fenced `js` blocks → extract to `*.js`; `node --check *.js`.
+  - Fenced `dockerfile` blocks → extract to a temp file named
+    `Dockerfile`; `hadolint <file>`; if hadolint missing,
+    `docker build --check -f <file> .`.
+  - Leading `$ `-prefixed CLI snippets → strip the prompt, extract
+    to `*.sh`; `shellcheck <file>` (catches command typos, missing
     quotes, unsupported flags).
   Any parse or lint error → fail the gate. Unknown fence language →
   skip that block but warn in the verdict reason.
