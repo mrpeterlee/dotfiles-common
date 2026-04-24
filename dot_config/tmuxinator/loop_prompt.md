@@ -294,11 +294,20 @@ draft.
 
 For rows whose status is `D`, tag the deleted path by extension
 under the same rules and add `deletion: true` to the per-file
-record. Step 2 treats a deletion as a caller-impact audit: "what
-code used to call this, and is every caller now updated?" Step 3
-routes deletions through a caller-sweep profile: `rg "<basename>"`
-across the repo + a usages audit per the deleted symbol; the test
-expectation is that no surviving caller references the removed path.
+record. For rows whose status is `R` (rename), tag BOTH the new
+path (as a normal change) AND the old path (as `deletion: true`,
+under the extension-based bucket of the old name) — renames are
+deletions of the old path from the caller's perspective, so the
+old name must still pass the caller-sweep. The `files_by_tag`
+manifest therefore carries two entries per rename: one for the new
+path's normal profile and one `deletion: true` for the old path.
+
+Step 2 treats a deletion as a caller-impact audit: "what code used
+to call this, and is every caller now updated?" Step 3 routes
+deletions through a caller-sweep profile: `rg "<basename>"` across
+the repo + a usages audit per the deleted symbol; the test
+expectation is that no surviving caller references the removed
+path.
 
 If `gstack-diff-scope` is installed (check: `command -v gstack-diff-scope`),
 source it first to get its baseline scope flags (`SCOPE_DOCS`,
@@ -388,21 +397,30 @@ next file):**
    (because the rendered output lives under `.claude/hooks/`).
    Both test profiles run.
 
-5. **`md_with_code`** — markdown (including `prompt_like` files
-   already tagged above) whose diff hunks contain fenced
-   ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ``` blocks
-   ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
-   `<!-- gate:run -->` marker. This tag is **additive** — unlike
-   rules 1-4, it runs on every file that matched an earlier rule
-   AND still has fenced code hunks in the diff. So `loop_prompt.md`
-   with a new ``` ```bash ``` block gets both `prompt_like`
-   (static-shape + smoke) AND `md_with_code` (extract-and-parse)
-   profiles, catching syntax errors in embedded example commands.
-   Routes to the parse-check profile in Step 3, not TDD.
+5. **`md_with_code`** — any markdown file (regardless of whether
+   rules 1-4 or rule 6 already tagged it) whose diff hunks contain
+   fenced ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ```
+   blocks ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
+   `<!-- gate:run -->` marker. This tag is **additive and
+   independent** — it runs in addition to whatever primary tag the
+   file received. Examples: `loop_prompt.md` with a new bash block
+   gets both `prompt_like` AND `md_with_code`; `README.md` with a
+   new bash block gets both `docs` AND `md_with_code` (and
+   therefore the gate runs — `surfaces != {"docs"}` because
+   `md_with_code` is also present); `docs/runbook.md` adding a
+   runnable yaml snippet gets the parse-check it needs. Routes to
+   the parse-check profile in Step 3, not TDD.
 
 6. **`docs`** — everything else: `.md` without embedded code, `.txt`,
    `.rst`, `docs/**`, `.png`, `.svg`, `CHANGELOG*`, `README*`,
-   license files, generated diagrams.
+   license files, generated diagrams, AND repo-hygiene files that
+   have no runtime behaviour: `.gitignore`, `.gitattributes`,
+   `.editorconfig`, `.mailmap`, `CODEOWNERS`. These are tagged
+   `docs` rather than `config` because they don't drive any runtime
+   / workflow / deployment path — the gate's config profile
+   (`actionlint`, `terraform validate`, etc.) has nothing to run on
+   them. This lets the one-shot `.gitignore`-adding-`.claude/pre-pr/`
+   bootstrap PR reach `surfaces == {"docs"}` → skip as intended.
 
 7. **`unknown`** — file types not listed above. Treat as `code` for
    routing — false-positive-run is cheap; false-positive-skip ships
@@ -553,9 +571,13 @@ it does not pick one. Keep artefacts under
     when credentials are available — `terraform plan`.
   - `gitops/**/*.{yml,yaml}` → `kubeconform` (or `kubectl apply
     --dry-run=client -f`).
-  - `.claude/settings*.json` → `jq .` round-trip + schema check if a
-    schema is bundled; reject any hook script path that does not
-    exist on disk.
+  - `.claude/settings*.json` / `private_dot_claude/settings*.json` /
+    `dot_claude/settings*.json` → `jq .` round-trip + schema check
+    if a schema is bundled; reject any hook script path that does
+    not exist on disk. For chezmoi-source paths (`private_dot_*`,
+    `dot_*`), render via `chezmoi cat` first so the validation runs
+    against the file contents that will actually land at
+    `~/.claude/settings.json`, not the unrendered source.
   - `docker-compose*`, `Dockerfile*` → `docker compose config` /
     `hadolint`.
   Dry-run must exit clean.
