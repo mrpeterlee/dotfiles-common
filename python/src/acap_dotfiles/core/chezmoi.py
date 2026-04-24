@@ -47,16 +47,25 @@ _CANONICAL_ARGS: tuple[str, ...] = (
 
 
 def _contains_mutating_verb(args: Sequence[str]) -> bool:
-    """Return True if any arg matches a known mutating chezmoi verb.
+    """Return True if any pre-`--` arg matches a known mutating chezmoi verb.
 
-    Conservative: false positives (extra --dry-run on benign invocations like
-    `-c apply.toml`) are harmless; false negatives (missing --dry-run on a
-    mutating run) are not. We accept the false-positive rate to eliminate the
-    class of "is this arg a verb or an operand?" parsing bugs that plagued
-    the prior _first_non_option / _VALUE_TAKING_GLOBALS design (codex caught
-    3 P1s in 3 review rounds).
+    Stops scanning at `--` so passthrough operands (e.g. `chezmoi git -- grep
+    apply`) don't false-positive trigger --dry-run injection on otherwise
+    read-only invocations.
+
+    Conservative within the pre-`--` window: false positives (extra --dry-run
+    on benign invocations like `-c apply.toml`) are harmless; false negatives
+    (missing --dry-run on a mutating run) are not. We accept the false-positive
+    rate to eliminate the class of "is this arg a verb or an operand?" parsing
+    bugs that plagued the prior _first_non_option / _VALUE_TAKING_GLOBALS
+    design (codex caught 3 P1s in 3 review rounds).
     """
-    return any(a in _MUTATING_VERBS for a in args)
+    for a in args:
+        if a == "--":
+            return False
+        if a in _MUTATING_VERBS:
+            return True
+    return False
 
 
 class ChezmoiError(RuntimeError):

@@ -209,3 +209,18 @@ def test_discover_binary_skips_non_executable_fallback(
 
 # Silence unused-import: shutil is referenced via the patch target string only.
 _ = shutil
+
+
+def test_dry_run_skipped_when_mutating_verb_appears_after_double_dash() -> None:
+    """Passthrough args after `--` must not false-positive trigger --dry-run.
+
+    Caught by codex P2 round 4 on 959eec3: `chezmoi git -- grep apply` would
+    otherwise inject --dry-run because 'apply' is in args, but it's a grep
+    pattern being passed through to git, not a chezmoi verb.
+    """
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    result = w.build_argv(["git", "--", "grep", "apply"])
+    assert "--dry-run" not in result
+    # Sanity: the same args without `--` would inject (apply IS a mutating verb name)
+    result2 = w.build_argv(["git", "grep", "apply"])
+    assert "--dry-run" in result2
