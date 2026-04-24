@@ -872,12 +872,15 @@ loop.
        done
 
    For each `<repo-dir>\t<branch>` pair, derive the `<owner>/<repo>`
-   remote and call:
+   remote and call — note: `gh pr list` has no `repository` JSON
+   field (only `headRepository`), so asking for it errors out and
+   crashes the idleness gate (codex round-6 P1); `-R` already
+   supplies the repo context anyway:
 
        owner_repo=$(git -C "<repo-dir>" remote get-url origin \
          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
        gh pr list --head "<branch>" -R "$owner_repo" \
-         --state open --json number,repository --limit 1
+         --state open --json number --limit 1
 
    If ALL pairs return `[]`, this session has no open PR. Sister
    sessions' PRs are irrelevant — their polling crons live in
@@ -986,15 +989,17 @@ follow-up work in-band, only clean-ups.
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
-        # `gh search` + `merged:>...` is server-side-filtered so
-        # the result set isn't truncated before the 7-day gate
-        # can apply — do NOT use `gh pr list --limit N`, which
-        # caps BEFORE the jq filter and drops in-range PRs
-        # (codex round-5 P2).
+        # `gh pr list --search "merged:>=..."` is server-side
+        # filtered so the result isn't truncated before the
+        # 7-day gate (codex round-5 P2). Use gh pr list rather
+        # than `gh search prs` because gh pr list exposes the
+        # fields we need (body, number) and `gh search prs`
+        # has a different --json schema without `headRefName`
+        # / `body` consistency (codex round-6 P2).
         since=$(date -u -d '7 days ago' +%Y-%m-%d)
-        gh search prs --author @me --merged \
-          "repo:$owner_repo merged:>=$since" \
-          --json number,body,repository \
+        gh pr list --state merged --author @me -R "$owner_repo" \
+          --search "merged:>=$since" \
+          --json number,body \
           -q '.[] | select(.body | test("Deferred P2s: (?!none)"; "is"))'
       done
 
@@ -1018,9 +1023,11 @@ follow-up work in-band, only clean-ups.
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        # gh pr list has no `repository` JSON field (codex
+        # round-6 P2) — -R already supplies the repo. Drop it.
         gh pr list --author @me --state open --draft \
           -R "$owner_repo" \
-          --json number,title,body,repository,updatedAt \
+          --json number,title,body,updatedAt \
           -q '.[] | select(.body
                   | test("Pre-PR (behavioural gate|review)"; "is"))
                   | select(.body | test("FAIL|bypassed|skipped"; "is"))
@@ -1059,16 +1066,16 @@ follow-up work in-band, only clean-ups.
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
-        # Use `gh search prs --merged` over a rolling window
-        # instead of `gh pr list --limit N`. Hard-capped limits
-        # truncate the result set before the join with worktree
-        # branches, so stale worktrees accumulate indefinitely
-        # once the merged-PR count exceeds the cap (codex
-        # round-5 P2). Window is generous: anything older than
-        # 60 days is unlikely to still have a worktree around.
+        # `gh pr list --search "merged:>=..."` is server-side
+        # filtered so the result isn't hard-capped before the
+        # window gate (codex round-5 P2). gh pr list exposes
+        # headRefName; `gh search prs` does NOT, and requesting
+        # it crashes (codex round-6 P2). 60-day window is
+        # generous — anything older is unlikely to still have a
+        # local worktree.
         since=$(date -u -d '60 days ago' +%Y-%m-%d)
-        merged_branches=$(gh search prs --author @me --merged \
-          "repo:$owner_repo merged:>=$since" \
+        merged_branches=$(gh pr list --state merged --author @me \
+          -R "$owner_repo" --search "merged:>=$since" \
           --json headRefName -q '.[].headRefName')
         # For each worktree in $wt_repo, emit it if its branch is
         # in $merged_branches.
