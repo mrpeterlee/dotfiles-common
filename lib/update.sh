@@ -45,16 +45,6 @@ cmd_update() {
         fi
     fi
 
-    # 5. Agent configs (if ~/.agents exists)
-    if [[ -x "${HOME}/.agents/cli" ]]; then
-        echo ""
-        info "Updating agent configs..."
-        "${HOME}/.agents/cli" apply
-        success "Agent configs updated"
-    else
-        debug "~/.agents/cli not found — skipping"
-    fi
-
     echo ""
     success "Update complete!"
     echo ""
