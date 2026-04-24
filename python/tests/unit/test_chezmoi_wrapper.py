@@ -236,6 +236,8 @@ def test_dry_run_inserted_before_passthrough_separator() -> None:
     result = w.build_argv(["apply", "--", "target1", "target2"])
     dash_idx = result.index("--")
     dry_run_idx = result.index("--dry-run")
-    assert dry_run_idx < dash_idx, f"--dry-run at {dry_run_idx} must precede -- at {dash_idx}: {result}"
+    assert dry_run_idx < dash_idx, (
+        f"--dry-run at {dry_run_idx} must precede -- at {dash_idx}: {result}"
+    )
     # Sanity: passthrough args after -- preserved verbatim
     assert result[dash_idx + 1 : dash_idx + 3] == ["target1", "target2"]
