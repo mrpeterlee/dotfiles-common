@@ -45,46 +45,18 @@ _CANONICAL_ARGS: tuple[str, ...] = (
     "--progress=false",
 )
 
-# Global chezmoi flags that consume the next argv element as their value.
-# Verb-resolution must skip the operand to find the actual verb.
-_VALUE_TAKING_GLOBALS: frozenset[str] = frozenset(
-    {
-        "-c",
-        "--config",
-        "--config-format",
-        "-D",
-        "--destination",
-        "--persistent-state",
-        "--cpu-profile",
-        "-S",
-        "--source",
-        "--source-path",
-    }
-)
 
+def _contains_mutating_verb(args: Sequence[str]) -> bool:
+    """Return True if any arg matches a known mutating chezmoi verb.
 
-def _first_non_option(args: Sequence[str]) -> str | None:
-    """Return the first non-option arg (the chezmoi verb), skipping global option operands.
-
-    chezmoi accepts global flags (e.g. `--debug`, `-v`) before the verb, so
-    `args[0]` is not a reliable indicator of which subcommand will run.
-
-    Some global flags (e.g. `-S /tmp/src`, `--config cfg.toml`) consume the
-    next argv element as their value. We must skip those operands so we don't
-    mistake them for the verb. The single-arg `--key=value` form is naturally
-    handled because it still starts with `-` and the loop continues.
+    Conservative: false positives (extra --dry-run on benign invocations like
+    `-c apply.toml`) are harmless; false negatives (missing --dry-run on a
+    mutating run) are not. We accept the false-positive rate to eliminate the
+    class of "is this arg a verb or an operand?" parsing bugs that plagued
+    the prior _first_non_option / _VALUE_TAKING_GLOBALS design (codex caught
+    3 P1s in 3 review rounds).
     """
-    skip_next = False
-    for a in args:
-        if skip_next:
-            skip_next = False
-            continue
-        if not a.startswith("-"):
-            return a
-        # `--key=value` is single-arg; `--key value` and `-k value` are two-arg
-        if a in _VALUE_TAKING_GLOBALS:
-            skip_next = True
-    return None
+    return any(a in _MUTATING_VERBS for a in args)
 
 
 class ChezmoiError(RuntimeError):
@@ -146,8 +118,7 @@ class Wrapper:
         if self.source is not None:
             argv.extend(["--source", str(self.source)])
         argv.extend(args)
-        verb = _first_non_option(args)
-        if self.dry_run and verb in _MUTATING_VERBS and "--dry-run" not in args:
+        if self.dry_run and _contains_mutating_verb(args) and "--dry-run" not in args:
             argv.append("--dry-run")
         return argv
 

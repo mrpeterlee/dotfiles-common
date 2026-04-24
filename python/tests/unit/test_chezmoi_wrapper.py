@@ -125,72 +125,64 @@ def test_wrapper_dry_run_does_NOT_inject_flag_for_read_verbs(fake_process: objec
     w.run(["data"])  # would crash if --dry-run were injected
 
 
-def test_build_argv_dry_run_injects_when_global_flag_precedes_mutating_verb() -> None:
-    """Codex P1: `chezmoi --debug apply` must still get --dry-run.
+def test_dry_run_injected_when_mutating_verb_present(fake_process: object) -> None:
+    """ANY occurrence of a mutating verb in args triggers --dry-run injection."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    for argv_in in [
+        ["apply"],
+        ["-S", "/tmp/src", "apply"],
+        ["--config", "cfg.toml", "update"],
+        ["--source-path", "apply"],  # boolean flag — codex P1 r3
+        ["--source=/tmp/src", "apply"],
+        ["--debug", "-S", "/tmp/src", "--config", "cfg.toml", "apply"],
+    ]:
+        result = w.build_argv(argv_in)
+        assert "--dry-run" in result, f"missed --dry-run for {argv_in}"
 
-    Old logic only checked args[0]; with a global flag in front, the verb
-    moves to args[1] and the mutation would silently run for real.
+
+def test_dry_run_skipped_when_no_mutating_verb(fake_process: object) -> None:
+    """Read-only invocations don't get --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    for argv_in in [
+        ["data"],
+        ["-S", "/tmp/src", "data"],
+        ["doctor"],
+        ["managed", "--include=files"],
+        ["status"],
+        ["diff"],
+    ]:
+        result = w.build_argv(argv_in)
+        assert "--dry-run" not in result, f"unexpected --dry-run for {argv_in}"
+
+
+def test_dry_run_not_injected_when_already_present(fake_process: object) -> None:
+    """If caller already passed --dry-run, don't double-inject."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    result = w.build_argv(["apply", "--dry-run"])
+    assert result.count("--dry-run") == 1
+
+
+def test_no_dry_run_when_wrapper_dry_run_false(fake_process: object) -> None:
+    """If wrapper.dry_run is False, never inject."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=False)
+    result = w.build_argv(["apply"])
+    assert "--dry-run" not in result
+
+
+def test_false_positive_acceptable_for_arg_value_named_apply(fake_process: object) -> None:
+    """Documented behavior: -c apply.toml does NOT trigger --dry-run injection.
+
+    Per the redesign rationale: false positives are harmless (chezmoi's
+    --dry-run on a read verb is just a no-op). The benefit is eliminating
+    the "is this arg a verb or operand?" parsing bug class.
+
+    Note: ['apply.toml'] is NOT in _MUTATING_VERBS (only the literal 'apply'
+    is). This test should NOT match — it's an edge case worth documenting
+    but not actually a false positive.
     """
     w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["--debug", "apply"])
-    assert "--dry-run" in argv
-    # And it should come after the user args, not in the middle of canonical args
-    assert argv[-1] == "--dry-run"
-
-
-def test_build_argv_dry_run_does_not_inject_for_read_verb_with_global_flag() -> None:
-    """`chezmoi -v data` should NOT get --dry-run (data is read-only)."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["-v", "data"])
-    assert "--dry-run" not in argv
-
-
-def test_build_argv_dry_run_still_works_for_bare_mutating_verb() -> None:
-    """Existing behavior: `apply` with no preceding flags still gets --dry-run."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["apply"])
-    assert "--dry-run" in argv
-
-
-def test_dry_run_injected_when_global_flag_with_operand_precedes_verb(
-    fake_process: object,
-) -> None:
-    """build_argv(['-S', '/tmp/src', 'apply']) with dry_run=True must inject --dry-run."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["-S", "/tmp/src", "apply"])
-    assert "--dry-run" in argv
-
-
-def test_dry_run_injected_when_long_global_with_operand_precedes_verb(
-    fake_process: object,
-) -> None:
-    """build_argv(['--config', 'cfg.toml', 'update']) with dry_run=True must inject --dry-run."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["--config", "cfg.toml", "update"])
-    assert "--dry-run" in argv
-
-
-def test_dry_run_skipped_when_global_with_operand_precedes_read_verb(
-    fake_process: object,
-) -> None:
-    """build_argv(['-S', '/tmp/src', 'data']) with dry_run=True must NOT inject --dry-run."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["-S", "/tmp/src", "data"])
-    assert "--dry-run" not in argv
-
-
-def test_dry_run_handles_equals_form_global(fake_process: object) -> None:
-    """build_argv(['--source=/tmp/src', 'apply']) with dry_run=True must inject --dry-run."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["--source=/tmp/src", "apply"])
-    assert "--dry-run" in argv
-
-
-def test_dry_run_handles_multiple_globals_before_verb(fake_process: object) -> None:
-    """build_argv(['--debug', '-S', '/tmp/src', '--config', 'cfg.toml', 'apply']) injects --dry-run."""
-    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
-    argv = w.build_argv(["--debug", "-S", "/tmp/src", "--config", "cfg.toml", "apply"])
-    assert "--dry-run" in argv
+    result = w.build_argv(["-c", "apply.toml", "data"])
+    assert "--dry-run" not in result  # 'apply.toml' != 'apply' verbatim
 
 
 def test_discover_binary_skips_non_executable_fallback(
