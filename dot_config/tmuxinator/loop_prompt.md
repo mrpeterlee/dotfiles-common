@@ -294,7 +294,9 @@ draft.
 
 For rows whose status is `D`, tag the deleted path by extension
 under the same rules and add `deletion: true` to the per-file
-record. For rows whose status is `R` (rename), tag BOTH the new
+record. For rows whose status **starts with `R`** (git reports
+renames as `R100`, `R087`, etc. — the number is the similarity
+score; match the whole family with `^R` / `R*`), tag BOTH the new
 path (as a normal change) AND the old path (as `deletion: true`,
 under the extension-based bucket of the old name) — renames are
 deletions of the old path from the caller's perspective, so the
@@ -330,6 +332,18 @@ and for precision on the `config` split that the tree performs but
   containing `gate-force-run` / `gate-force-skip` (when re-running on
   an existing PR) → run / skip accordingly.
 - If no files changed → skip, reason `no files changed`.
+
+**Templates are a pre-classifier special case.** Before applying the
+per-file rules below, if the path ends in `.tmpl`, `.j2`, or
+`.mustache`, render it to its target path with representative data
+(`chezmoi cat` for chezmoi sources; `jinja2` / `mustache` for
+others), then tag based on the rendered output. Copy every tag the
+rendered file earns back onto the template itself. A
+`private_dot_ssh/config.tmpl` rendering to OpenSSH config text picks
+up `config`; a `private_dot_claude/hooks/some-hook.sh.tmpl` picks up
+`code` (via `.claude/hooks/**`); a `private_dot_claude/docs/note.md.tmpl`
+picks up `docs`. This special case runs before rules 1-6 so every
+template lands in the right bucket regardless of shell content.
 
 **Per-file tagging rules (pick the FIRST rule that matches this
 file — do NOT stop walking the file list after a hit; continue to the
@@ -387,15 +401,9 @@ next file):**
        **/*.sh  **/*.bash  **/*.zsh
        **/executable_*.sh  **/run_once_*.sh
 
-   **Template files** (`*.tmpl`, `*.j2`, `*.mustache`) are a special
-   case that breaks first-match-wins: render the template to its
-   target path with representative data, then re-run the tagging
-   rules on the rendered output. Copy every tag the rendered file
-   earns back onto the template. A `private_dot_ssh/config.tmpl`
-   that renders to OpenSSH config text picks up `config`; a
-   `private_dot_claude/hooks/some-hook.sh.tmpl` picks up `code`
-   (because the rendered output lives under `.claude/hooks/`).
-   Both test profiles run.
+   Template handling is now the pre-classifier special case at the
+   top of Step 1 — renamed from this bucket to avoid the "nested
+   inside shell but applies to all templates" contradiction.
 
 5. **`md_with_code`** — any markdown file (regardless of whether
    rules 1-4 or rule 6 already tagged it) whose diff hunks contain
@@ -595,9 +603,23 @@ it does not pick one. Keep artefacts under
   assert the expected terminal state (a section referenced, a tool
   called, a verdict line emitted). Do NOT chase golden-behavioural
   diffs — too brittle.
-- **Tag `md_with_code`** → extract fenced blocks; prove they at least
-  parse: `bash -n`, `python -m py_compile`, `yq '.'`, `jq .`. Any
-  parse error → fail the gate.
+- **Tag `md_with_code`** → extract every construct rule 5 counted
+  as code-in-markdown; prove each at least parses:
+  - Fenced `bash`/`sh` blocks → `bash -n`.
+  - Fenced `python` / `py` blocks → `python -m py_compile`.
+  - Fenced `yaml` / `yml` blocks → `yq '.'`.
+  - Fenced `json` blocks → `jq .`.
+  - Fenced `ts` / `tsx` blocks → `tsc --noEmit --allowJs` (or
+    `deno check` / `bunx tsc --noEmit` — whichever is installed).
+  - Fenced `js` blocks → `node --check`.
+  - Fenced `dockerfile` blocks → write to a temp file + `hadolint`;
+    if hadolint missing, at least `docker build --check -` via
+    stdin.
+  - Leading `$ `-prefixed CLI snippets → strip the prompt and run
+    `shellcheck -` on the result (catches command typos, missing
+    quotes, unsupported flags).
+  Any parse or lint error → fail the gate. Unknown fence language →
+  skip that block but warn in the verdict reason.
 - **Tag `docs`** → no-op. Docs pass through unchecked.
 
 **Behavioural-coverage audit (tag `code` only).** Once tests are
@@ -675,8 +697,12 @@ already ignore `.claude/pre-pr/`, the session opens a one-line PR
     .claude/pre-pr/
 
 to `.gitignore`. This PR itself skips §4b — the classifier sees
-only `.gitignore` changes, which fall through to the `config` tag
-and the `jq`/shape test is a no-op for gitignore (treat as docs).
+only `.gitignore` changes, which rule 6 explicitly tags as `docs`
+(alongside `.gitattributes`, `.editorconfig`, `.mailmap`, and
+`CODEOWNERS`). With every file tagged `docs`, `surfaces ==
+{"docs"}` and Step 1 writes `verdict: "skip"` directly — no §4b
+execution on the bootstrap PR. Consistent with rule 6; do NOT re-
+tag `.gitignore` as `config`.
 
 **Escape hatch** (rare): when a reviewer genuinely wants codex to
 see the usages.md, run `codex exec "Read
