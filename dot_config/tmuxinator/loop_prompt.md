@@ -851,11 +851,28 @@ loop.
 ### Idleness definition (all four must hold)
 
 1. `TaskList` returns no entries.
-2. `gh search prs --author @me --state open --limit 1` returns `[]`.
+2. **No open PR from THIS session.** Account-wide
+   `gh search prs --author @me --state open` is wrong — a sister
+   session's PR in a different repo would block this pane forever.
+   Scope to this session's own branches only:
+
+       # Enumerate every worktree this session owns across repos
+       for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+         [ -d "$wt_repo" ] || continue
+         git -C "$wt_repo" worktree list --porcelain 2>/dev/null
+       done | awk -v s="$(basename "$PWD")" '
+           /^worktree / { wt=$2 }
+           /^branch /   { if (wt ~ s) print substr($2, 12) }'
+
+   For each resulting branch, run `gh pr list --head <branch>
+   --state open --json number,repository --limit 1`. If ALL
+   branches return `[]`, this session has no open PR. Sister
+   sessions' PRs are irrelevant — their polling crons live in
+   their own Claude sessions, not ours.
 3. `CronList` has no entries whose prompt matches
    `pr-codex-watch|PR #[0-9]+|/loop 1m|Poll .* PR`  — i.e., no
-   minute-level polling loops active.
-4. No verification artefacts pending at
+   minute-level polling loops active in THIS session.
+4. No verification artefacts pending:
    `${TELEGRAM_STATE_DIR}/mcp-reconnect.count` > 0 OR
    `.claude/pre-pr/<head-sha>/verdict.json` == `in_progress`.
 
@@ -898,12 +915,13 @@ follow-up work in-band, only clean-ups.
   bullet, `TaskCreate` with tag `follow-up,pr-<n>,deferred-p2` and
   body `{repo, pr, finding, file:line if present}`.
 
-- **A2 — Pending TaskList entries already tagged `follow-up`.**
-
-      TaskList, filter status=pending AND tags contains "follow-up"
-
-  Non-empty → do NOT create new tasks. §1's next sweep picks them up
-  via the three-state machine.
+- **A2 — Note.** Idleness already requires `TaskList` to be empty,
+  so there is nothing to "find" here at DISCOVER time. If an
+  earlier row in THIS same pass (A1) emits a `TaskCreate`, DO NOT
+  treat its presence as a short-circuit signal for later rows
+  (A4, A7) — every row runs to completion and emits its own
+  `TaskCreate` entries independently. A2 is kept in the row
+  numbering for taxonomic completeness; no DISCOVER action.
 
 - **A4 — Draft PRs from @me (likely §4b FAIL survivors).**
 
@@ -943,10 +961,23 @@ follow-up work in-band, only clean-ups.
 
 - **B4 — `CronList` entries whose PR already merged.**
 
-  For each cron whose prompt names a PR number (regex `PR #([0-9]+)`
-  OR `Poll .* PR #?([0-9]+)`), `gh pr view <n> --json state`. If
-  state ∈ `{MERGED, CLOSED}`, record to the EXECUTE queue as a
-  `CronDelete` target.
+  For each cron whose prompt names a PR number, extract both the
+  PR number AND its repo. The repo is in the prompt text itself
+  (CronCreate prompts use `-R <owner>/<repo>` when scheduled by
+  §5 / poll-merge flows):
+
+      regex_pr_repo='-R[[:space:]]+([-_.a-zA-Z0-9]+/[-_.a-zA-Z0-9]+)[[:space:]]+.*PR[[:space:]]*#?([0-9]+)|PR[[:space:]]*#?([0-9]+)[[:space:]]+.*-R[[:space:]]+([-_.a-zA-Z0-9]+/[-_.a-zA-Z0-9]+)'
+
+  Extract `<repo>` and `<n>`, then:
+
+      gh pr view <n> -R <repo> --json state
+
+  If state ∈ `{MERGED, CLOSED}`, record to the EXECUTE queue as a
+  `CronDelete` target. If the cron prompt does NOT name `-R
+  <repo>`, fall back to `gh pr view <n> --json state` in the
+  current working tree; log but do not fail if that 404s — such
+  crons are likely stale handoffs from an ancestor session and
+  get picked up by the 2-hour stale-marker sweep anyway.
 
 - **B7 — Main clone has a feature branch checked out.**
 
