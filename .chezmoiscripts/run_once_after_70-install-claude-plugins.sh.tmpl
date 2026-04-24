@@ -9,12 +9,9 @@
 
 set -euo pipefail
 
-if ! command -v claude >/dev/null 2>&1; then
-  echo "[install-claude-plugins] claude CLI not found; skipping plugin install"
-  echo "[install-claude-plugins] (this script will re-run automatically once claude is installed)"
-  exit 0
-fi
-
+# npm globals install UNCONDITIONALLY (they do not depend on claude). This way
+# a fresh host without claude still gets gemini-cli + codex, and the following
+# claude-plugin block gates only itself.
 if ! command -v npm >/dev/null 2>&1; then
   echo "[install-claude-plugins] npm not found; skipping npm globals" >&2
 else
@@ -22,6 +19,12 @@ else
   echo "[install-claude-plugins] installing npm global: {{ $name }}"
   npm install -g {{ $name | quote }} 2>&1 | tail -3 || echo "[warn] npm install {{ $name }} failed"
   {{- end }}
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[install-claude-plugins] claude CLI not found; skipping marketplace + plugin install"
+  echo "[install-claude-plugins] (the lookPath hash-comment above re-triggers this script when claude appears on PATH)"
+  exit 0
 fi
 
 {{- range $url := .claude_marketplaces | default (list) }}

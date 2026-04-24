@@ -8,7 +8,7 @@
 # Per-agent copy-mode install functions
 _install_claude() {
     info "Installing Claude Code config..."
-    local src="$SCRIPT_DIR/dot_claude"
+    local src="$SCRIPT_DIR/private_dot_claude"
     local dst="${AGENT_DIRS[claude]}"
 
     # Top-level files
@@ -216,6 +216,10 @@ _apply_chezmoi() {
     if has_cmd op; then
         if [[ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]]; then
             op_mode="service"
+            has_op="true"
+            use_op="yes"
+        elif op whoami >/dev/null 2>&1; then
+            op_mode="account"
             has_op="true"
             use_op="yes"
         fi

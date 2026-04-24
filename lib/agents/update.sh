@@ -25,7 +25,7 @@ cmd_update() {
     # 1. Safety backup (capture current state before overwriting)
     if [[ "$no_backup" == "false" ]]; then
         info "Safety backup before update..."
-        source "${SCRIPT_DIR}/lib/backup.sh"
+        source "${SCRIPT_DIR}/lib/agents/backup.sh"
         cmd_backup --skip-oauth
     else
         debug "Safety backup skipped (--no-backup)"
@@ -42,12 +42,12 @@ cmd_update() {
 
     # 3. Apply configs
     info "Applying configs..."
-    source "${SCRIPT_DIR}/lib/apply.sh"
+    source "${SCRIPT_DIR}/lib/agents/apply.sh"
     cmd_apply all
     echo ""
 
     # 4. Refresh MCP servers
-    source "${SCRIPT_DIR}/lib/restore.sh"
+    source "${SCRIPT_DIR}/lib/agents/restore.sh"
     _install_mcp_servers
     echo ""
 

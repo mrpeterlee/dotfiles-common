@@ -108,33 +108,37 @@ _install_mcp_servers() {
 
     info "Installing MCP servers..."
 
-    local count
-    count=$(jq '.servers | length' "$mcp_file")
+    local count registered
+    count=$(jq 'keys | length' "$mcp_file")
+    registered=0
 
-    for ((i = 0; i < count; i++)); do
-        local name server_cmd scope
-        name=$(jq -r ".servers[$i].name" "$mcp_file")
-        server_cmd=$(jq -r ".servers[$i].command" "$mcp_file")
-        scope=$(jq -r ".servers[$i].scope // \"user\"" "$mcp_file")
-
-        local args_json
-        args_json=$(jq -r ".servers[$i].args // [] | .[]" "$mcp_file")
-
-        local cmd_args=()
-        cmd_args+=(claude mcp add)
-        [[ "$scope" != "user" ]] && cmd_args+=(--scope "$scope")
-        cmd_args+=("$name" -- "$server_cmd")
-
-        while IFS= read -r arg; do
-            [[ -n "$arg" ]] && cmd_args+=("$arg")
-        done <<< "$args_json"
-
-        if "${cmd_args[@]}" 2>/dev/null; then
-            success "  $name installed"
+    while IFS= read -r name; do
+        local cfg
+        cfg=$(jq -c --arg n "$name" '.[$n]' "$mcp_file")
+        claude mcp remove -s user "$name" >/dev/null 2>&1 || true
+        if claude mcp add-json -s user "$name" "$cfg" >/dev/null 2>&1; then
+            registered=$((registered + 1))
         else
-            warn "  $name may already exist or failed (non-fatal)"
+            warn "  failed to register $name"
         fi
-    done
+    done < <(jq -r 'keys[]' "$mcp_file")
+
+    success "  registered $registered of $count MCP server(s)"
+    return 0
+
+    # Legacy array-shape handler below (dead; kept for reference):
+    # for ((i = 0; i < count; i++)); do
+    #     name=$(jq -r ".servers[$i].name" "$mcp_file")
+    #     server_cmd=$(jq -r ".servers[$i].command" "$mcp_file")
+    #     scope=$(jq -r ".servers[$i].scope // \"user\"" "$mcp_file")
+    #     args_json=$(jq -r ".servers[$i].args // [] | .[]" "$mcp_file")
+    #     local cmd_args=()
+    #     cmd_args+=(claude mcp add)
+    #     [[ "$scope" != "user" ]] && cmd_args+=(--scope "$scope")
+    #     cmd_args+=("$name" -- "$server_cmd")
+    #     while IFS= read -r arg; do [[ -n "$arg" ]] && cmd_args+=("$arg"); done <<< "$args_json"
+    #     "${cmd_args[@]}" && success "  $name installed" || warn "  $name may already exist"
+    # done
 }
 
 _restore_oauth_file() {
@@ -311,7 +315,7 @@ cmd_restore() {
     echo ""
 
     # 2. Apply all configs
-    source "${SCRIPT_DIR}/lib/apply.sh"
+    source "${SCRIPT_DIR}/lib/agents/apply.sh"
     cmd_apply all
     echo ""
 
@@ -324,6 +328,6 @@ cmd_restore() {
     echo ""
 
     # 5. Status report
-    source "${SCRIPT_DIR}/lib/status.sh"
+    source "${SCRIPT_DIR}/lib/agents/status.sh"
     cmd_status
 }
