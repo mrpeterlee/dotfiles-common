@@ -35,3 +35,6 @@ __pycache__/
 .env
 .env.*
 credentials*
+
+# Pre-PR behavioural gate artefacts (§4b)
+.claude/pre-pr/
