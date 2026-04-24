@@ -40,3 +40,24 @@ def test_status_handles_chezmoi_missing(monkeypatch: pytest.MonkeyPatch) -> None
         result = CliRunner().invoke(main, ["status"])
     assert result.exit_code != 0
     assert "chezmoi binary not found" in result.stderr
+
+
+def test_status_probes_xdg_paths_after_migration() -> None:
+    """Status must probe ~/.config/<tool>/... — not the legacy ~/.zshrc tree.
+
+    Regression test for the codex P2 finding: the bash list checked
+    ~/.zshrc, ~/.tmux.conf, ~/.gitconfig — none of which the repo renders
+    after the XDG migration. Verified by importing the probe table directly
+    so a future revert can't silently re-introduce the bare-home paths.
+    """
+    from acap_dotfiles.commands.status import _PROBE_FILES
+
+    paths = {label: path for label, path in _PROBE_FILES}
+    assert paths["zsh config"] == "~/.config/zsh/.zshrc"
+    assert paths["tmux config"] == "~/.config/tmux/tmux.conf"
+    assert paths["git config"] == "~/.config/git/config"
+    # Legacy bare-home paths must NOT appear anywhere in the probe table.
+    bare = {p for _, p in _PROBE_FILES}
+    assert "~/.zshrc" not in bare
+    assert "~/.tmux.conf" not in bare
+    assert "~/.gitconfig" not in bare

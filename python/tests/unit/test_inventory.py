@@ -39,6 +39,19 @@ def test_render_ssh_config_emits_port_when_non_default() -> None:
     assert "Port" not in out2
 
 
+def test_load_hosts_picks_up_yml_alongside_yaml(tmp_path: Path) -> None:
+    """`*.yml` files must load alongside `*.yaml` — `dots ssh render` help
+    advertises both, so the loader can't silently drop the shorthand form.
+
+    Regression test for the codex P2 finding (loader globbed only *.yaml).
+    """
+    (tmp_path / "alpha.yaml").write_text("name: alpha\naddr: 10.0.0.1\n")
+    (tmp_path / "beta.yml").write_text("name: beta\naddr: 10.0.0.2\n")
+    hosts = load_hosts(tmp_path)
+    names = sorted(h.name for h in hosts)
+    assert names == ["alpha", "beta"]
+
+
 def test_render_ssh_config_role_filter_excludes_other_roles() -> None:
     hosts = [
         Host(name="alpha", addr="10.0.0.1", role="acap"),

@@ -20,9 +20,14 @@ class Host:
 
 
 def load_hosts(inventory_dir: Path) -> list[Host]:
-    """Read every *.yaml under inventory_dir and return a list of Host."""
+    """Read every *.yaml / *.yml under inventory_dir and return a list of Host.
+
+    Both extensions are accepted so users can drop in either form (the
+    `dots ssh render` help text advertises the *.yml shorthand).
+    """
     hosts: list[Host] = []
-    for yaml_file in sorted(inventory_dir.glob("*.yaml")):
+    yaml_files = sorted(list(inventory_dir.glob("*.yaml")) + list(inventory_dir.glob("*.yml")))
+    for yaml_file in yaml_files:
         raw = yaml.safe_load(yaml_file.read_text()) or {}
         hosts.append(
             Host(

@@ -270,6 +270,51 @@ def test_restore_stub_chezmoi_toml_contains_required_keys(
     assert "hasOp = true" in content or "hasOp = false" in content
 
 
+def test_restore_non_tty_skips_init_when_stub_written(
+    fake_process: object, tmp_path: Path, monkeypatch: object
+) -> None:
+    """Non-TTY → skip `chezmoi init` once the stub config is in place.
+
+    Regression test for the codex P1 finding: even after the richer stub,
+    `chezmoi init` re-renders ``.chezmoi.toml.tmpl`` which contains
+    ``promptStringOnce`` calls that fail with EOF on stdin in non-TTY
+    contexts. Expectation: the command writes the stub, then jumps straight
+    to ``apply --force`` — `init` is never invoked. Verified by registering
+    ONLY the apply call with fake_process; if init runs, fake_process raises
+    ``ProcessNotRegisteredError`` and the test fails loudly.
+    """
+    monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))  # type: ignore[attr-defined]
+    # Note: NO init registration. If init runs, pytest-subprocess raises.
+    fake_process.register(  # type: ignore[attr-defined]
+        [
+            "/usr/bin/chezmoi",
+            "--no-tty",
+            "--no-pager",
+            "--color=off",
+            "--progress=false",
+            "--source",
+            str(tmp_path),
+            "apply",
+            "--force",
+        ],
+        stdout=b"",
+    )
+    with (
+        patch(
+            "acap_dotfiles.commands.restore.discover_binary",
+            return_value=Path("/usr/bin/chezmoi"),
+        ),
+        patch("acap_dotfiles.commands.restore._is_tty", return_value=False),
+    ):
+        result = CliRunner().invoke(main, ["restore"])
+    assert result.exit_code == 0
+    stub_path = fake_home / ".config" / "chezmoi" / "chezmoi.toml"
+    assert stub_path.is_file(), "non-TTY should write stub chezmoi.toml"
+
+
 def test_restore_missing_chezmoi_binary_exits_2(tmp_path: Path, monkeypatch: object) -> None:
     """Missing chezmoi binary → exit 2."""
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]

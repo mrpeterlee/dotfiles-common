@@ -23,10 +23,15 @@ _PROBE_DIRS = [
     ("conda prod env", "/opt/conda/envs/prod"),
 ]
 _PROBE_FILES = [
-    ("zsh config", "~/.zshrc"),
+    # Paths reflect what the chezmoi source tree actually renders to —
+    # most configs migrated to XDG (~/.config/...) so the legacy bash list
+    # (~/.zshrc, ~/.tmux.conf, ~/.gitconfig) probed locations the repo no
+    # longer ships. Verified via `chezmoi managed --include=files` against
+    # the dotfiles source tree.
+    ("zsh config", "~/.config/zsh/.zshrc"),
     ("nvim config", "~/.config/nvim/init.lua"),
-    ("tmux config", "~/.tmux.conf"),
-    ("git config", "~/.gitconfig"),
+    ("tmux config", "~/.config/tmux/tmux.conf"),
+    ("git config", "~/.config/git/config"),
     ("wezterm config", "~/.wezterm.lua"),
     ("lazygit config", "~/.config/lazygit/config.yml"),
 ]

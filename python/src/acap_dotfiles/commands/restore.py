@@ -120,22 +120,28 @@ def restore(ctx: click.Context, force: bool) -> None:
     # Stub chezmoi.toml when non-TTY (chezmoi init prompts otherwise).
     # Wrapper.build_argv already injects --source from cfg.home; we let it own
     # that to avoid double-passing --source on init.
-    if not is_tty:
-        cfg_dir = Path.home() / ".config" / "chezmoi"
-        cfg_path = cfg_dir / "chezmoi.toml"
-        if not cfg_path.exists():
-            cfg_dir.mkdir(parents=True, exist_ok=True)
-            cfg_path.write_text(_stub_chezmoi_toml())
+    cfg_dir = Path.home() / ".config" / "chezmoi"
+    cfg_path = cfg_dir / "chezmoi.toml"
+    if not is_tty and not cfg_path.exists():
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(_stub_chezmoi_toml())
 
     # init — Wrapper.build_argv prepends --source from cfg.home.
-    rc = stream(
-        w.build_argv(["init"]),
-        on_stdout=lambda line: click.echo(line),
-        on_stderr=lambda line: click.echo(line, err=True),
-    )
-    if rc != 0:
-        click.echo(f"chezmoi init failed (rc={rc})", err=True)
-        sys.exit(rc)
+    # Skip in non-TTY when a chezmoi.toml already exists (or was just stubbed):
+    # `chezmoi init` re-renders .chezmoi.toml.tmpl which contains
+    # promptStringOnce calls that fail with EOF on stdin in non-TTY contexts
+    # (CI, SSH `-T` bootstrap). Mirrors legacy lib/restore.sh behavior — the
+    # apply step alone is enough once the config stub is in place.
+    should_run_init = is_tty or not cfg_path.exists()
+    if should_run_init:
+        rc = stream(
+            w.build_argv(["init"]),
+            on_stdout=lambda line: click.echo(line),
+            on_stderr=lambda line: click.echo(line, err=True),
+        )
+        if rc != 0:
+            click.echo(f"chezmoi init failed (rc={rc})", err=True)
+            sys.exit(rc)
 
     # apply — auto-inject --force when non-TTY (no prompt path available).
     apply_args = ["apply"]
