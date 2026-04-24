@@ -2,6 +2,9 @@
 
 import pytest
 
+# pytest-subprocess provides the fake_process fixture; just import the marker
+pytest_plugins = ["pytest_subprocess"]
+
 
 @pytest.fixture(autouse=True)
 def _no_color(monkeypatch: pytest.MonkeyPatch) -> None:
