@@ -310,10 +310,13 @@ and for precision on the `config` split that the tree performs but
 
 **Override check (runs before the per-file walk).**
 
-- `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Skip:'`
-  → force skip, record the reason from the trailer.
-- `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Run:'`
-  → force run, record the reason.
+- `git log -1 --format=%B HEAD | grep -iE '^Gate-Skip:'`
+  → force skip, record the reason from the trailer. Scope to the
+  **tip commit only** — not `origin/<base>..HEAD` — so a stale
+  `Gate-Skip:` trailer from an earlier commit on a stacked or
+  multi-commit branch cannot silently override the current PR.
+- `git log -1 --format=%B HEAD | grep -iE '^Gate-Run:'`
+  → force run, record the reason. Same tip-commit-only scope.
 - `gh pr view --json labels --jq '.labels[].name' 2>/dev/null`
   containing `gate-force-run` / `gate-force-skip` (when re-running on
   an existing PR) → run / skip accordingly.
@@ -385,11 +388,17 @@ next file):**
    (because the rendered output lives under `.claude/hooks/`).
    Both test profiles run.
 
-5. **`md_with_code`** — otherwise-inert markdown whose diff hunks
-   contain fenced ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ```
-   blocks ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
-   `<!-- gate:run -->` marker. Routes to the parse-check profile in
-   Step 3, not TDD.
+5. **`md_with_code`** — markdown (including `prompt_like` files
+   already tagged above) whose diff hunks contain fenced
+   ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ``` blocks
+   ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
+   `<!-- gate:run -->` marker. This tag is **additive** — unlike
+   rules 1-4, it runs on every file that matched an earlier rule
+   AND still has fenced code hunks in the diff. So `loop_prompt.md`
+   with a new ``` ```bash ``` block gets both `prompt_like`
+   (static-shape + smoke) AND `md_with_code` (extract-and-parse)
+   profiles, catching syntax errors in embedded example commands.
+   Routes to the parse-check profile in Step 3, not TDD.
 
 6. **`docs`** — everything else: `.md` without embedded code, `.txt`,
    `.rst`, `docs/**`, `.png`, `.svg`, `CHANGELOG*`, `README*`,
@@ -519,9 +528,13 @@ it does not pick one. Keep artefacts under
 
 **Compose with existing skills — do NOT re-invent:**
 
-- **Tag `code`** → invoke `Skill superpowers:test-driven-development`
-  with the usages.md section as the starting spec. Follow its RED →
-  verify-RED → GREEN → verify-GREEN → REFACTOR discipline. Unit +
+- **Tag `code`** → invoke a TDD skill with the usages.md section as
+  the starting spec. Prefer `superpowers:test-driven-development`
+  (from the `claude-plugins-official` plugin) when available; fall
+  back to the local `tdd-workflow` skill (shipped in
+  `private_dot_claude/skills/tdd-workflow/SKILL.md` in this repo)
+  when the superpowers plugin is not installed. Either way, follow
+  RED → verify-RED → GREEN → verify-GREEN → REFACTOR. Unit +
   integration where the surface warrants. Verify coverage ≥ repo
   standard (80% if the repo enforces one, else at least every
   call-site in usages.md is exercised).
@@ -573,11 +586,18 @@ had coverage. If it returns CRITICAL or HIGH findings, treat them as
 [P1] and add / strengthen tests before proceeding. MEDIUM / LOW go
 under "Deferred P2s" in the PR body.
 
-**Close the gate with `superpowers:verification-before-completion`.**
-Invoke it before writing `verdict.json`. Its IDENTIFY → RUN → READ →
-VERIFY → CLAIM walk prevents "I ran the tests" without the matching
-evidence artefact. The output of its CLAIM step is what the
-`verdict.json` `reason` field quotes.
+**Close the gate with a verification skill.** Prefer
+`superpowers:verification-before-completion` (from the
+`claude-plugins-official` plugin) when available; fall back to the
+local `verification-loop` skill
+(`private_dot_claude/skills/verification-loop/SKILL.md` in this
+repo) when the superpowers plugin is not installed. Invoke it before
+writing `verdict.json`. Its IDENTIFY → RUN → READ → VERIFY → CLAIM
+walk (or the local equivalent: build → typecheck → lint →
+tests+coverage → security scan → diff review) prevents "I ran the
+tests" without the matching evidence artefact. The output of the
+CLAIM / final-summary step is what the `verdict.json` `reason` field
+quotes.
 
 **Convergence.** 3 generate→run cycles per usage, 10-minute wall
 clock per cycle. On exhaustion:
