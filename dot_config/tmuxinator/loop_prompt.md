@@ -261,6 +261,492 @@ filter; it is independent of §5's post-PR merge authority.
    in the PR body with the operator's message ID and reason, and
    register a follow-up `TaskCreate` to run the review post-merge.
 
+## 4b. Pre-PR behavioural gate — before `gh pr create`
+
+Runs BEFORE §4a. §4a is an independent second opinion on the diff;
+§4b is first-person verification that the change actually works. The
+operator does not see the diff until both gates have passed.
+
+The gate has three steps: **classify**, **describe + test**, **share
+with §4a**. Output is `PASS` / `FAIL` / `SKIP` written as a verdict
+artefact the rest of the flow consumes.
+
+### Step 1 — Classify the change set
+
+**Accumulate surfaces, do not short-circuit.** The classifier must
+use a **status-bearing** diff so deletions are detectable. Run:
+
+    git diff --name-status --diff-filter=ACMRD origin/<base>...HEAD
+
+Each row is `<status>\t<path>` (for renames it is
+`<status>\t<old>\t<new>`). `ACMRD` is deliberate: the `D` (deleted)
+filter is included because removing a prompt file, script, or agent
+is itself a behaviour change that callers depend on. `--name-only`
+would drop the status letter, so the deletion branch below could
+never populate — codex caught this on round 4.
+
+For each row, assign the MOST SPECIFIC tag from the rules below to
+the resulting path (the new path for renames). Mixed PRs (e.g.,
+`src/foo.py` + `AGENTS.md`) get BOTH `code` and `prompt_like` in
+`surfaces`; Step 3 then runs the matching test profile for each tag.
+First-match-wins was wrong — reviewers caught this on the initial
+draft.
+
+For rows whose status is `D`, tag the deleted path by extension
+under the same rules and add `deletion: true` to the per-file
+record. For rows whose status **starts with `R`** (git reports
+renames as `R100`, `R087`, etc. — the number is the similarity
+score; match the whole family with `^R` / `R*`), tag BOTH the new
+path (as a normal change) AND the old path (as `deletion: true`,
+under the extension-based bucket of the old name) — renames are
+deletions of the old path from the caller's perspective, so the
+old name must still pass the caller-sweep. The `files_by_tag`
+manifest therefore carries two entries per rename: one for the new
+path's normal profile and one `deletion: true` for the old path.
+
+Step 2 treats a deletion as a caller-impact audit: "what code used
+to call this, and is every caller now updated?" Step 3 routes
+deletions through a caller-sweep profile: `rg "<basename>"` across
+the repo + a usages audit per the deleted symbol; the test
+expectation is that no surviving caller references the removed
+path.
+
+If `gstack-diff-scope` is installed (check: `command -v gstack-diff-scope`),
+source it first to get its baseline scope flags (`SCOPE_DOCS`,
+`SCOPE_CODE`, `SCOPE_PROMPTS`, `SCOPE_CONFIG`, `SCOPE_MIGRATIONS`,
+`SCOPE_TESTS`). Use them as a cheap pre-pass; still run the tree
+below for the `prompt_like` / `md_with_code` tags it does not emit
+and for precision on the `config` split that the tree performs but
+`gstack-diff-scope` conflates with `code`.
+
+**Override check (runs before the per-file walk).**
+
+- `git log -1 --format=%B HEAD | grep -iE '^Gate-Skip:'`
+  → force skip, record the reason from the trailer. Scope to the
+  **tip commit only** — not `origin/<base>..HEAD` — so a stale
+  `Gate-Skip:` trailer from an earlier commit on a stacked or
+  multi-commit branch cannot silently override the current PR.
+- `git log -1 --format=%B HEAD | grep -iE '^Gate-Run:'`
+  → force run, record the reason. Same tip-commit-only scope.
+- `gh pr view --json labels --jq '.labels[].name' 2>/dev/null`
+  containing `gate-force-run` / `gate-force-skip` (when re-running on
+  an existing PR) → run / skip accordingly.
+- If no files changed → skip, reason `no files changed`.
+
+**Templates are a pre-classifier special case.** Before applying the
+per-file rules below, if the path ends in `.tmpl`, `.j2`, or
+`.mustache` AND its diff status is not `D` (deleted):
+
+- Render it to its target path with representative data (`chezmoi
+  cat` for chezmoi sources; `jinja2` / `mustache` for others), then
+  tag based on the rendered output. Copy every tag the rendered
+  file earns back onto the template itself. A
+  `private_dot_ssh/config.tmpl` rendering to OpenSSH config text
+  picks up `config`; a `private_dot_claude/hooks/some-hook.sh.tmpl`
+  picks up `code` (via `.claude/hooks/**`); a
+  `private_dot_claude/docs/note.md.tmpl` picks up `docs`.
+
+If the template is DELETED (status `D`) or its OLD path is missing
+(status `R<score>`, old path), render the OLD revision via
+`git show <base>:<old-path> | chezmoi execute-template` to recover
+what it used to produce, then classify normally. This keeps deleted
+templates routed through the caller-sweep profile instead of
+failing classification because the worktree file no longer exists.
+
+This special case runs before rules 1-6 so every template lands in
+the right bucket regardless of shell content.
+
+**Per-file tagging rules (pick the FIRST rule that matches this
+file — do NOT stop walking the file list after a hit; continue to the
+next file):**
+
+1. **`config`** — infra / workflow / runtime config that has a
+   dedicated dry-run/lint path (NOT TDD). Use `**/` prefixes so the
+   rules match chezmoi source paths (`private_dot_claude/settings.json`),
+   rendered destinations (`.claude/settings.json`,
+   `~/.claude/settings.json`), and nested monorepo locations:
+
+       **/.github/workflows/**/*.{yml,yaml}
+       **/ansible/**/*.{yml,yaml,j2}
+       **/terraform/**/*.{tf,tfvars}
+       **/gitops/**/*.{yml,yaml}
+       **/.claude/settings*.json
+       **/private_dot_claude/settings*.json
+       **/dot_claude/settings*.json
+       **/docker-compose*.{yml,yaml}
+       **/Dockerfile*
+
+2. **`prompt_like`** — files that drive LLM behaviour. All patterns
+   are applied against the full diff path (no implicit anchoring).
+   Use `**/` prefixes to match chezmoi-source paths
+   (`private_dot_claude/CLAUDE.md`, `dot_codex/AGENTS.md`) and
+   rendered destinations (`~/.claude/CLAUDE.md`) alike:
+
+       **/CLAUDE.md           **/AGENTS.md
+       **/loop_prompt*.md
+       **/skills/**/SKILL.md           **/skills/**/symlink_SKILL.md
+       **/agents/**/*.md               **/commands/**/*.md
+       **/rules/**/*.md
+       .agents/claude/rules/**/*.md
+       .agents/claude/skills/**/SKILL.md
+       .agents/claude/commands/**/*.md
+       dot_codex/**/*.md
+       private_dot_claude/**/*.md
+
+3. **`code`** — source code subject to full TDD. Runs BEFORE `shell`
+   so that hook scripts and other "shell but needs code-level
+   scrutiny" files get the full TDD + `pr-test-analyzer` path, not
+   just `shellcheck`:
+
+       **/*.py  **/*.ts  **/*.tsx  **/*.js  **/*.go  **/*.rs
+       **/*.java  **/*.kt  **/*.rb  **/*.swift  **/*.cs  **/*.cpp
+       **/Makefile  **/pyproject.toml  **/package.json
+       **/uv.lock  **/poetry.lock  **/requirements*.txt
+       .claude/hooks/**          (shell or JS, still source)
+       **/scripts/**/*.{sh,bash,js,ts,py}   (project-level scripts
+                                             gated at code level)
+
+4. **`shell`** — standalone shell that is NOT under `.claude/hooks/`
+   or `scripts/`:
+
+       **/*.sh  **/*.bash  **/*.zsh
+       **/executable_*.sh  **/run_once_*.sh
+
+   Template handling is now the pre-classifier special case at the
+   top of Step 1 — renamed from this bucket to avoid the "nested
+   inside shell but applies to all templates" contradiction.
+
+5. **`md_with_code`** — any markdown file (regardless of whether
+   rules 1-4 or rule 6 already tagged it) whose diff hunks contain
+   fenced ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ```
+   blocks ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
+   `<!-- gate:run -->` marker. This tag is **additive and
+   independent** — it runs in addition to whatever primary tag the
+   file received. Examples: `loop_prompt.md` with a new bash block
+   gets both `prompt_like` AND `md_with_code`; `README.md` with a
+   new bash block gets both `docs` AND `md_with_code` (and
+   therefore the gate runs — `surfaces != {"docs"}` because
+   `md_with_code` is also present); `docs/runbook.md` adding a
+   runnable yaml snippet gets the parse-check it needs. Routes to
+   the parse-check profile in Step 3, not TDD.
+
+6. **`docs`** — everything else: `.md` without embedded code, `.txt`,
+   `.rst`, `docs/**`, `.png`, `.svg`, `CHANGELOG*`, `README*`,
+   license files, generated diagrams, AND repo-hygiene files that
+   have no runtime behaviour: `.gitignore`, `.gitattributes`,
+   `.editorconfig`, `.mailmap`, `CODEOWNERS`. These are tagged
+   `docs` rather than `config` because they don't drive any runtime
+   / workflow / deployment path — the gate's config profile
+   (`actionlint`, `terraform validate`, etc.) has nothing to run on
+   them. This lets the one-shot `.gitignore`-adding-`.claude/pre-pr/`
+   bootstrap PR reach `surfaces == {"docs"}` → skip as intended.
+
+7. **`unknown`** — file types not listed above. Treat as `code` for
+   routing — false-positive-run is cheap; false-positive-skip ships
+   untested behaviour.
+
+**Verdict state machine.** `verdict.json` carries one of four
+terminal values plus an `in_progress` transient:
+
+    surfaces = union(per_file_tag for each file)
+
+    if surfaces == {"docs"}:
+        verdict = "skip"              # terminal — fall through to §4a
+        reason  = "docs-only: N files, no code/config/prompt surfaces"
+    else:
+        verdict = "in_progress"       # transient — Step 3 rewrites
+
+Step 3 rewrites `verdict.json` when tests complete:
+
+- Every profile for every non-empty bucket in `files_by_tag` passed,
+  AND if `code ∈ surfaces` then `pr-test-analyzer` returned no
+  CRITICAL or HIGH findings (MEDIUM / LOW are deferred P2s in the
+  PR body, not blockers — consistent with the triage rule below),
+  AND `superpowers:verification-before-completion` CLAIM passes →
+  `verdict = "pass"` (terminal, falls through to §4a).
+- Convergence exhausted or a profile's mandatory check refuses to go
+  green → `verdict = "fail"` (terminal, draft-PR path).
+- On abort / timeout → `verdict = "error"` (terminal, escalate).
+
+Surface-specific gates only apply when that surface is present.
+A prompt-only PR passes without `pr-test-analyzer` because
+`code ∉ surfaces`; a config-only PR passes on dry-run-clean alone.
+`superpowers:verification-before-completion` is the one check that
+runs for every non-skip verdict — it is the "fresh-evidence"
+sign-off, not a surface-specific test.
+
+§4a consumes `verdict.json` and proceeds ONLY when `verdict ∈ {"pass",
+"skip"}`. `in_progress` blocks §4a; `fail` and `error` route to the
+draft-PR + Telegram escalation described below. There is exactly one
+path to `skip`: every file ended up tagged `docs`. Any other
+combination — even one config file alongside a hundred docs — runs
+the gate for the non-docs surfaces and passes docs through as no-op.
+
+Manifest shape:
+
+    {
+      "verdict": "skip" | "in_progress" | "pass" | "fail" | "error",
+      "reason": "...",
+      "surfaces": ["code", "prompt_like", "config", ...],
+      "files_by_tag": {
+        "code":        [
+          {"path": "core/src/acap/pipeline/gate.py", "deletion": false}
+        ],
+        "config":      [
+          {"path": ".github/workflows/ci.yml", "deletion": false}
+        ],
+        "prompt_like": [
+          {"path": "AGENTS.md",               "deletion": false},
+          {"path": "retired/old-prompt.md",   "deletion": true}
+        ],
+        "shell":       [],
+        "md_with_code":[],
+        "docs":        [
+          {"path": "docs/reference/.../plan.md", "deletion": false}
+        ]
+      },
+      "base_sha": "...",
+      "head_sha": "..."
+    }
+
+`files_by_tag` is the single source of truth for routing in Step 3.
+Each entry is an object `{path, deletion}` so Step 3 can distinguish
+"test the new behaviour" (`deletion: false`) from "audit callers
+still referencing the removed path" (`deletion: true`). Step 3
+iterates every non-empty bucket and runs the matching test profile
+— not just the first, not just the primary. On `skip`, paste the
+one-line justification into the PR body under a `## Pre-PR
+behavioural gate` section and fall through to §4a.
+
+### Step 2 — Describe the usages (runs when `verdict == in_progress`)
+
+Entered only when Step 1 produced non-docs surfaces and wrote
+`verdict: "in_progress"`. If Step 1 wrote `verdict: "skip"`, skip
+Step 2 and Step 3 entirely.
+
+For every entry in `files_by_tag.code`, `files_by_tag.shell`,
+`files_by_tag.prompt_like`, and `files_by_tag.md_with_code`, write a
+structured description to `.claude/pre-pr/<head-sha>/usages.md`.
+`files_by_tag.config` and `files_by_tag.docs` do not require a usages
+section (config is dry-run-only; docs are inert). One section per
+file. For entries with `deletion: true`, the section is a
+caller-sweep audit rather than a usage description: what callers
+exist(ed), which ones still reference the removed path, and evidence
+each remaining caller has been updated. Each regular section:
+
+- **What changed** — the diff hunks in one paragraph.
+- **Who calls this** — every caller path you can identify via `grep`
+  / `rg` / LSP `Find references`. Name files, not prose.
+- **When it runs** — cron, request path, skill invocation, build step,
+  test harness, etc.
+- **Inputs** — the function signature, CLI flags, env vars read,
+  config keys consumed, prompt trigger text.
+- **Expected behaviour** — what observable effect the callers rely on.
+- **Failure modes** — what happens if this call fails, retries, or
+  returns empty.
+
+**Paraphrase-detection.** Dispatch ONE `Agent` (general-purpose) in
+parallel with no prior context — pass it the diff text and
+`files_needing_tests` list only. Ask it to produce its own usages
+list cold. Jaccard overlap on identified call-sites ≥ 0.7 → accept.
+< 0.7 → regenerate your own doc once with the missing call-sites
+added. Second miss → annotate `## Pre-PR behavioural gate: UNCERTAIN`
+in the PR body and escalate to Telegram with both lists. The cost is
+one extra Agent dispatch per PR (≈ $0.05); the benefit is catching
+the "skimmed the diff, wrote a shallow doc" failure mode.
+
+### Step 3 — Design + run the tests
+
+**Iterate every non-empty bucket in `files_by_tag`.** Run the matching
+test profile for EACH surface that appears — a mixed PR with `code` +
+`prompt_like` runs both the code profile and the prompt_like profile;
+it does not pick one. Keep artefacts under
+`.claude/pre-pr/<head-sha>/tests/`.
+
+**Compose with existing skills — do NOT re-invent:**
+
+- **Tag `code`** → invoke a TDD skill with the usages.md section as
+  the starting spec. Prefer `superpowers:test-driven-development`
+  (from the `claude-plugins-official` plugin) when available; fall
+  back to the local `tdd-workflow` skill (shipped in
+  `private_dot_claude/skills/tdd-workflow/SKILL.md` in this repo)
+  when the superpowers plugin is not installed. Either way, follow
+  RED → verify-RED → GREEN → verify-GREEN → REFACTOR. Unit +
+  integration where the surface warrants. Verify coverage ≥ repo
+  standard (80% if the repo enforces one, else at least every
+  call-site in usages.md is exercised).
+- **Tag `shell`** → `shellcheck`; `bats` if the repo has a
+  `tests/bats/` tree, else generate a minimal harness driven by the
+  usages.md (stub env, capture stdout/stderr/exit, assert). Chezmoi
+  `.tmpl` files: render with representative `--data` and then run the
+  `shell` profile on the rendered output.
+- **Tag `config`** → dry-run / lint only; no unit tests required:
+  - `.github/workflows/*.{yml,yaml}` → `actionlint`.
+  - `ansible/**/*.{yml,yaml,j2}` → `ansible-lint --syntax-check`,
+    plus `ansible-playbook --syntax-check --check <playbook>` where
+    applicable.
+  - `terraform/**/*.{tf,tfvars}` → `terraform fmt -check`,
+    `terraform init -backend=false`, `terraform validate`, and —
+    when credentials are available — `terraform plan`.
+  - `gitops/**/*.{yml,yaml}` → `kubeconform` (or `kubectl apply
+    --dry-run=client -f`).
+  - `.claude/settings*.json` / `private_dot_claude/settings*.json` /
+    `dot_claude/settings*.json` → `jq .` round-trip + schema check
+    if a schema is bundled; reject any hook script path that does
+    not exist on disk. For chezmoi-source paths (`private_dot_*`,
+    `dot_*`), render via `chezmoi cat` first so the validation runs
+    against the file contents that will actually land at
+    `~/.claude/settings.json`, not the unrendered source.
+  - `docker-compose*`, `Dockerfile*` → `docker compose config` /
+    `hadolint`.
+  Dry-run must exit clean.
+- **Tag `prompt_like`** → (a) **static-shape tests**: **if** the
+  file begins with YAML frontmatter (`---` on line 1), it parses
+  cleanly — otherwise skip the frontmatter check (most ACap /
+  dotfiles prompts are plain Markdown without frontmatter and must
+  not be penalised for it); every required section heading that the
+  file's own convention declares is present; intra-repo links
+  resolve (`rg '\]\([./]'` then check target exists); token count
+  fits the host's context budget. (b) **smoke loop** (when the
+  change affects a decision rule, not just prose): the test MUST
+  bind to the edited worktree copy, not the default / already-loaded
+  copy. Inject the file explicitly:
+    - For a Claude skill surface: `claude -p "<fixture prompt>"
+      --append-system-prompt "$(cat <worktree path to edited file>)"`
+      so the sub-session sees the new rules.
+    - For `loop_prompt.md` or similar tmuxinator-driven prompts:
+      `claude -p "<fixture>" --append-system-prompt "$(cat <worktree path>)"`
+      and assert on the response. The default `claude -p` loads
+      no operator prompt, so without `--append-system-prompt` the
+      edited rule is never exercised.
+  Assert the expected terminal state (a section referenced, a tool
+  called, a verdict line emitted). Do NOT chase golden-behavioural
+  diffs — too brittle.
+- **Tag `md_with_code`** → extract every construct rule 5 counted
+  as code-in-markdown **to a temp file** under
+  `.claude/pre-pr/<head-sha>/extracted/<file-basename>.<n>.<ext>`
+  first, then prove each at least parses. The extract-to-temp-file
+  step is mandatory — `python -m py_compile` and `tsc --noEmit`
+  both require file paths and will otherwise either error on
+  missing args (`py_compile`) or silently typecheck the enclosing
+  project instead of the snippet (`tsc`):
+  - Fenced `bash`/`sh` blocks → extract to `*.sh`; `bash -n *.sh`.
+  - Fenced `python` / `py` blocks → extract to `*.py`;
+    `python -m py_compile *.py`.
+  - Fenced `yaml` / `yml` blocks → pipe directly to `yq '.'`.
+  - Fenced `json` blocks → pipe directly to `jq .`.
+  - Fenced `ts` / `tsx` blocks → extract to `*.ts` with an adjacent
+    `tsconfig.json` isolating the snippet (`{"compilerOptions":
+    {"noEmit":true,"allowJs":true,"skipLibCheck":true}}`); run
+    `tsc --noEmit -p <that-config>`. Or `deno check *.ts` if deno
+    is installed.
+  - Fenced `js` blocks → extract to `*.js`; `node --check *.js`.
+  - Fenced `dockerfile` blocks → extract to a temp file named
+    `Dockerfile`; `hadolint <file>`; if hadolint missing,
+    `docker build --check -f <file> .`.
+  - Leading `$ `-prefixed CLI snippets → strip the prompt, extract
+    to `*.sh`; `shellcheck <file>` (catches command typos, missing
+    quotes, unsupported flags).
+  Any parse or lint error → fail the gate. Unknown fence language →
+  skip that block but warn in the verdict reason.
+- **Tag `docs`** → no-op. Docs pass through unchecked.
+
+**Behavioural-coverage audit (tag `code` only).** Once tests are
+green, dispatch the `pr-test-analyzer` agent with the diff + the new
+tests. Its job is to verify the tests actually exercise the changed
+behaviour — not just the happy path, and not just lines that already
+had coverage. If it returns CRITICAL or HIGH findings, treat them as
+[P1] and add / strengthen tests before proceeding. MEDIUM / LOW go
+under "Deferred P2s" in the PR body.
+
+**Close the gate with a verification skill.** Prefer
+`superpowers:verification-before-completion` (from the
+`claude-plugins-official` plugin) when available; fall back to the
+local `verification-loop` skill
+(`private_dot_claude/skills/verification-loop/SKILL.md` in this
+repo) when the superpowers plugin is not installed. Invoke it before
+writing `verdict.json`. Its IDENTIFY → RUN → READ → VERIFY → CLAIM
+walk (or the local equivalent: build → typecheck → lint →
+tests+coverage → security scan → diff review) prevents "I ran the
+tests" without the matching evidence artefact. The output of the
+CLAIM / final-summary step is what the `verdict.json` `reason` field
+quotes.
+
+**Convergence.** 3 generate→run cycles per usage, 10-minute wall
+clock per cycle. On exhaustion:
+
+1. Write `verdict.json` with `"verdict": "fail"`, `"reason": "<what
+   failed>"`.
+2. Open the PR as **draft**. Prepend the PR body with a
+   `## Pre-PR behavioural gate: FAIL` block naming each failing test
+   and the usages.md entry it tracks.
+3. Send ONE Telegram reply with the last failing output trimmed to
+   ~20 lines + a link to the full log under
+   `.claude/pre-pr/<head-sha>/`.
+
+Silent skip is forbidden. Same rule as §4a.6.
+
+### Step 4 — Hand off to §4a
+
+Block here if `verdict.json` is `in_progress` — that means Step 3 has
+not finished rewriting the verdict; wait or restart Step 3 from the
+last artefact. If `verdict.json` is `fail` or `error`, take the draft-PR
+escalation path under Convergence above — do NOT proceed to §4a with
+a non-terminal-pass verdict.
+
+When `verdict.json` says `pass` (or `skip`), append these lines to the
+planned PR body before §4a runs:
+
+    ## Pre-PR behavioural gate
+
+    - Verdict: `<pass | skip>` (`<reason>`)
+    - Classifier tags: `<surfaces>`
+    - Artefacts: `.claude/pre-pr/<head-sha>/`
+
+`codex review` has no `--append-prompt` (its supported flags are
+`--base`, `--commit`, `--title`, `--uncommitted`, `--config`,
+`--enable`, `--disable`, plus one positional `[PROMPT]` that is
+mutually exclusive with `--base`). Codex also runs BEFORE
+`gh pr create`, so there is no PR body it can read.
+
+**Default: the two gates are independent.** §4b's artefacts live
+under `.claude/pre-pr/<head-sha>/` in the worktree. That path should
+be in the repo's `.gitignore` (if it is not, the session adds it in
+a setup commit — see below) so the artefacts are never committed,
+never reach codex's diff, and never land on `main`. §4a then runs
+against the actual code/config/prompt diff, which is the right
+scope for a "second opinion on the change". The usages.md is
+internal bookkeeping for §4b's own convergence + for the operator's
+audit trail, not a codex input.
+
+**First-time setup** (one-shot per repo): if `.gitignore` does not
+already ignore `.claude/pre-pr/`, the session opens a one-line PR
+(or folds into the first §4b-using PR) adding:
+
+    .claude/pre-pr/
+
+to `.gitignore`. This PR itself skips §4b — the classifier sees
+only `.gitignore` changes, which rule 6 explicitly tags as `docs`
+(alongside `.gitattributes`, `.editorconfig`, `.mailmap`, and
+`CODEOWNERS`). With every file tagged `docs`, `surfaces ==
+{"docs"}` and Step 1 writes `verdict: "skip"` directly — no §4b
+execution on the bootstrap PR. Consistent with rule 6; do NOT re-
+tag `.gitignore` as `config`.
+
+**Escape hatch** (rare): when a reviewer genuinely wants codex to
+see the usages.md, run `codex exec "Read
+.claude/pre-pr/<head-sha>/usages.md and judge whether the diff
+matches the claimed usages"` as a secondary pass AFTER the primary
+`codex review --base <base>`. Two calls, more tokens. Only use when
+the complexity of the change warrants it.
+
+### Emergency skip
+
+Mirrors §4a.7. Explicit Telegram message naming the PR; annotate
+`## Pre-PR behavioural gate skipped` with the operator's message ID
+and reason; register a follow-up `TaskCreate` to run the gate
+post-merge.
+
 ## 5. PR lifecycle — you own it through merge
 
 Opening a PR creates a commitment. Do not hand it back.
