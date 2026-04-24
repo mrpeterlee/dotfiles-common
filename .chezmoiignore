@@ -118,3 +118,10 @@ __pycache__/
 .gemini/sessions/
 .gemini/cache/
 .gemini/oauth_creds.json
+
+# === P2.5 follow-up: team inboxes are session-state, not config ===
+# Each inbox is a JSON message log between agents from a one-off
+# bootstrap session — contains operator-personal data (SSH passwords,
+# AWS account IDs, infra IPs, etc.) that the org-plaintext regex
+# doesn't fully catch. Treat as session-state, like .claude/sessions/.
+private_dot_claude/teams/*/inboxes/
