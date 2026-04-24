@@ -55,3 +55,66 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# === P2.5: Claude/Codex/Gemini ephemeral state (from .agents .chezmoiignore) ===
+
+# Claude Code OAuth + secrets
+.claude/.credentials.json
+.claude/channels/telegram/.env
+.claude/settings.local.json
+.claude/README.md
+.claude/PLUGIN_SCHEMA_NOTES.md
+.claude/the-security-guide.md
+
+# Claude Code session/runtime state
+.claude/sessions/
+.claude/session-env/
+.claude/session-data/
+.claude/projects/
+.claude/debug/
+.claude/cache/
+.claude/backups/
+.claude/file-history/
+.claude/homunculus/
+.claude/shell-snapshots/
+.claude/paste-cache/
+.claude/metrics/
+.claude/telemetry/
+.claude/chrome/
+.claude/downloads/
+.claude/todos/
+.claude/memory/
+.claude/ecc/
+.claude/history.jsonl
+.claude/bash-commands.log
+.claude/cost-tracker.log
+.claude/mcp-health-cache.json
+.claude/stats-cache.json
+.claude/policy-limits.json
+.claude/private_dot_claude.json
+.claude/private_dot_claude.json.stale.bak
+.claude/security_warnings_state_*.json
+
+# Plugin-managed (lives under .claude but not source)
+.claude/plugins/
+.claude/hooks/
+.claude/skills/gstack/
+
+# Nested agent configs (when run from a Claude Code session)
+.claude/.agents/
+.claude/.codex/
+.claude/.cursor/
+.claude/.opencode/
+
+# Codex CLI ephemeral state
+.codex/sessions/
+.codex/cache/
+.codex/log/
+.codex/state_*.sqlite*
+.codex/protocol/
+.codex/auth.json
+
+# Gemini CLI ephemeral state
+.gemini/sessions/
+.gemini/cache/
+.gemini/oauth_creds.json
