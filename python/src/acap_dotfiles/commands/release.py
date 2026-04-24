@@ -99,23 +99,34 @@ def cut(level: str) -> None:
         pyproject_toml.write_text(new_py_text)
         add_paths.append(str(pyproject_toml))
         # Re-lock so uv.lock records the new editable version. Best-effort:
-        # some test/dev environments don't have the `uv` binary on PATH; skip
-        # the add in that case rather than fail the cut.
-        lock_rc = subprocess.run(
-            ["uv", "lock"],
-            cwd=str(cfg.home / "python"),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if lock_rc.returncode == 0 and uv_lock.is_file():
-            add_paths.append(str(uv_lock))
-        elif lock_rc.returncode != 0:
+        # some test/dev/release environments don't have the `uv` binary on PATH;
+        # skip the add in that case rather than fail the cut. Codex P2 final:
+        # without the FileNotFoundError catch, missing uv would abort the
+        # cut after rewriting __init__.py + pyproject.toml but before
+        # commit/tag, leaving the working tree in a half-modified state.
+        try:
+            lock_rc = subprocess.run(
+                ["uv", "lock"],
+                cwd=str(cfg.home / "python"),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
             click.echo(
-                f"warning: `uv lock` failed (rc={lock_rc.returncode}); "
-                f"uv.lock not staged. stderr: {lock_rc.stderr.strip()}",
+                "warning: `uv` not on PATH; uv.lock not regenerated. "
+                "Run `uv lock` manually if needed.",
                 err=True,
             )
+        else:
+            if lock_rc.returncode == 0 and uv_lock.is_file():
+                add_paths.append(str(uv_lock))
+            elif lock_rc.returncode != 0:
+                click.echo(
+                    f"warning: `uv lock` failed (rc={lock_rc.returncode}); "
+                    f"uv.lock not staged. stderr: {lock_rc.stderr.strip()}",
+                    err=True,
+                )
 
     subprocess.run(["git", "add", *add_paths], cwd=str(cfg.home), check=True)
     subprocess.run(

@@ -34,7 +34,10 @@ set -Eeuo pipefail
 
 # Configuration
 REPO="${CHEZMOI_REPO:-MrPeterLee/dotfiles}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Script lives at lib/cli-legacy.sh (moved from repo-root cli in P3 T1.5).
+# All sourced paths below are written as ${SCRIPT_DIR}/lib/<x>.sh, so
+# SCRIPT_DIR must point at the repo root, not the lib/ dir this file lives in.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHEZMOI_BIN="${HOME}/.local/bin/chezmoi"
 CHEZMOI_SOURCE="${HOME}/.local/share/chezmoi"
 CHEZMOI_CONFIG_DIR="${HOME}/.config/chezmoi"
