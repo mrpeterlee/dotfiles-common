@@ -3,7 +3,8 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_AUTO_BACKGROUND_TASKS": "1",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-6"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus",
+    "CLAUDE_CODE_FORK_SUBAGENT": "1"
   },
   "attribution": {
     "commit": "",
@@ -455,7 +456,7 @@
     }
   },
   "outputStyle": "Be concise. Use Decimal for all financial values. Prefix monetary amounts with currency codes. Use ISO 8601 for timestamps. When discussing trades: include side, quantity, price, venue.",
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "plansDirectory": "docs/plans",
   "skipDangerousModePermissionPrompt": true,
   "sshConfigs": [
