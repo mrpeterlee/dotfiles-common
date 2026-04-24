@@ -19,7 +19,14 @@ from acap_dotfiles.io.exec import stream
 @click.argument("chezmoi_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def apply(ctx: click.Context, chezmoi_args: tuple[str, ...]) -> None:
-    """Apply chezmoi state to the destination. Extra args forwarded to chezmoi."""
+    """Apply dotfiles from the chezmoi source dir to the destination.
+
+    Lightweight wrapper around `chezmoi apply` for the common case: refresh
+    managed files and re-run any onchange scripts that need it. Extra args
+    after `--` are forwarded verbatim to chezmoi (use `dots apply -- --refresh-externals`
+    to force external dependency refresh, for example). Honors the global
+    `--dry-run` flag.
+    """
     cfg = DotsConfig()
     try:
         binary = discover_binary()

@@ -10,7 +10,13 @@ import click
 
 @click.command(name="migrate-from-legacy")
 def migrate_from_legacy() -> None:
-    """One-shot migration banner from the legacy bash `cli` to `dots`."""
+    """Acknowledge the migration from legacy bash `cli` to `dots`.
+
+    Idempotent: prints the verb-mapping banner (cli apply → dots apply, etc.)
+    and which subcommands stay bash-only (`cli conda`, `cli agents`), then
+    drops a marker at `~/.config/dots/.migrated` so subsequent invocations
+    are silent. Run once after upgrading to the P3 shim.
+    """
     marker = Path.home() / ".config" / "dots" / ".migrated"
     if marker.exists():
         click.echo("already migrated; nothing to do")

@@ -34,7 +34,13 @@ _PROBE_FILES = [
 
 @click.command()
 def status() -> None:
-    """Print a human-readable status report of chezmoi + dotfile-installed tools."""
+    """Show installation status of chezmoi + dotfile-managed tools.
+
+    Reports the chezmoi-managed file count and probes a fixed set of common
+    config paths and tool install dirs (TPM, zinit, lazy.nvim, fzf, conda,
+    plus shell/editor/git config files). Each probe prints with a check or
+    cross mark — useful for verifying a fresh restore landed everything.
+    """
     try:
         binary = discover_binary()
     except ChezmoiError as e:

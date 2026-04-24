@@ -14,7 +14,13 @@ from acap_dotfiles.io.exec import stream
 @click.command()
 @click.pass_context
 def update(ctx: click.Context) -> None:
-    """Apply, then refresh externals (best-effort), then prompt for conda/tools (out of scope for P3)."""
+    """Update all installed components: apply dotfiles, then refresh externals.
+
+    Two-phase update: (1) `chezmoi apply` — hard fails on error; (2) `chezmoi
+    apply --refresh-externals` — best-effort, warns on failure. Conda env
+    rebuild and essential-tools install (Phases 3-4 in the legacy bash
+    `update`) stay in bash for P3 — see the printed Note for routing.
+    """
     cfg = DotsConfig()
     try:
         binary = discover_binary()

@@ -95,11 +95,16 @@ def _stub_chezmoi_toml() -> str:
 @click.option("-f", "--force", is_flag=True, help="Pass --force to chezmoi apply.")
 @click.pass_context
 def restore(ctx: click.Context, force: bool) -> None:
-    """Initialize chezmoi from the source dir and apply.
+    """Initialize chezmoi from the source dir and apply dotfiles.
 
-    Note: package-manager bootstrapping (apt/dnf/brew, conda, oh-my-posh, eza,
-    etc.) is OUT OF P3 SCOPE and stays in bash `~/.files/lib/cli-legacy.sh
-    restore`. Run that on a fresh host before `dots restore`.
+    Equivalent to `chezmoi init <source>` followed by `chezmoi apply`. Use on
+    a fresh host (or after a `cli restore --force` clean slate) to lay down
+    every managed file. Auto-injects `--force` and writes a stub
+    `~/.config/chezmoi/chezmoi.toml` when stdin is non-TTY (CI / SSH `-T`).
+
+    Out of P3 scope: package-manager bootstrap (apt/dnf/brew, conda,
+    oh-my-posh, eza). Run `~/.files/lib/cli-legacy.sh restore` first on a
+    bare host to install prereqs, then `dots restore`.
     """
     cfg = DotsConfig()
     try:

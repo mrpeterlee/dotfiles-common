@@ -19,7 +19,14 @@ from acap_dotfiles.io.exec import stream
 @click.command()
 @click.pass_context
 def backup(ctx: click.Context) -> None:
-    """chezmoi re-add then `git status --porcelain` to preview commit."""
+    """Capture live system changes back into the chezmoi source repo.
+
+    Runs `chezmoi re-add` to pull modified managed files (e.g. updated
+    `~/.claude/CLAUDE.md`) back into `$ACAP_DOTFILES_HOME`, then prints a
+    `git status --porcelain` preview of what would be committed. Stops short
+    of the actual commit/push so you can review before sealing — the next-step
+    hint is printed at the end.
+    """
     cfg = DotsConfig()
     try:
         binary = discover_binary()

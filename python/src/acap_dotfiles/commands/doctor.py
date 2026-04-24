@@ -35,7 +35,13 @@ def _git_remote_url(cwd: Path) -> str | None:
 
 @click.command()
 def doctor() -> None:
-    """Preflight sanity checks for chezmoi + op + source dir + git remote."""
+    """Run preflight sanity checks before apply/update/restore.
+
+    Verifies the chezmoi binary is discoverable, the source dir contains a
+    valid `.chezmoi.toml.tmpl`, the optional 1Password CLI (`op`) is
+    installed, and the git remote points at a dotfiles-common repo. Prints
+    PASS/WARN/FAIL per check. Exits 0 on PASS or PASS+WARN, 2 on any FAIL.
+    """
     cfg = DotsConfig()
     failed = False
     warned = False

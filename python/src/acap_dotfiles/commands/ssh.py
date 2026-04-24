@@ -13,7 +13,7 @@ from acap_dotfiles.core.inventory import load_hosts, render_ssh_config
 
 @click.group()
 def ssh() -> None:
-    """SSH-related helpers."""
+    """SSH-related helpers (config rendering from inventory)."""
 
 
 @ssh.command()
@@ -39,7 +39,14 @@ def ssh() -> None:
     help="Only emit hosts matching this role.",
 )
 def render(inventory_dir: Path | None, out_path: Path | None, role_filter: str | None) -> None:
-    """Render inventory → SSH config."""
+    """Render an SSH config block from inventory YAML.
+
+    Reads every `*.yml` under `--inventory` (default
+    `$ACAP_DOTFILES_HOME/inventory/hosts`), emits a deterministic
+    `~/.ssh/config`-shaped block, and writes to `--out` (or stdout). Use
+    `--role` to scope output to a single host class (e.g. `--role personal`).
+    Safe to pipe into a chezmoi-managed include.
+    """
     cfg = DotsConfig()
     inventory = inventory_dir or (cfg.home / "inventory" / "hosts")
     if not inventory.is_dir():

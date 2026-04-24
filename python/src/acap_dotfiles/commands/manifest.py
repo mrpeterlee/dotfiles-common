@@ -14,13 +14,22 @@ from acap_dotfiles.core.manifest import load_manifest
 
 @click.group()
 def manifest() -> None:
-    """Inspect or print the chezmoi-managed manifest."""
+    """Inspect the chezmoi-managed file manifest.
+
+    The manifest at `$ACAP_DOTFILES_HOME/manifest.yaml` is the canonical
+    list of which paths each host role owns. Subcommands here are read-only.
+    """
 
 
 @manifest.command()
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of human-readable text.")
 def show(as_json: bool) -> None:
-    """Print the manifest as a list of (path, role) entries."""
+    """Print the manifest as `(role, path)` entries.
+
+    Default output is `<role>  <path>` per line, sorted by manifest order.
+    Pass `--json` for a machine-readable envelope `{version, entries: [...]}`,
+    suitable for piping into `jq` or driving a chezmoi-template generator.
+    """
     cfg = DotsConfig()
     path = cfg.home / "manifest.yaml"
     try:

@@ -33,13 +33,25 @@ def _bump(major: int, minor: int, patch: int, pre: int | None, level: str) -> st
 
 @click.group()
 def release() -> None:
-    """Release-management helpers."""
+    """Release-management helpers (semver bump + tag).
+
+    Owns the `__version__` string in `python/src/acap_dotfiles/__init__.py`,
+    the static `version = "..."` line in `python/pyproject.toml`, and the
+    derived `python/uv.lock`. Wired into the `acap-dotfiles-cli` PyPI release
+    flow.
+    """
 
 
 @release.command()
 @click.argument("level", type=click.Choice(["patch", "minor", "major", "pre"]))
 def cut(level: str) -> None:
-    """Bump __version__, commit, and create annotated tag v<version>."""
+    """Bump version (patch|minor|major|pre), commit, and tag `v<version>`.
+
+    Refuses to run on a dirty working tree. Writes the new version to both
+    `__init__.py` and `pyproject.toml`, re-locks `uv.lock` (best-effort), then
+    `git commit -m "chore(release): bump to <v>"` + `git tag -a v<v>`. Push
+    is left manual: `git push && git push --tags`.
+    """
     cfg = DotsConfig()
     init_py = cfg.home / "python" / "src" / "acap_dotfiles" / "__init__.py"
     if not init_py.is_file():
