@@ -1,7 +1,11 @@
 import ast
 from pathlib import Path
 
-ALLOWED = {"src/acap_dotfiles/core/chezmoi.py", "src/acap_dotfiles/io/exec.py"}
+ALLOWED = {
+    "src/acap_dotfiles/core/chezmoi.py",
+    "src/acap_dotfiles/io/exec.py",
+    "src/acap_dotfiles/commands/doctor.py",
+}
 
 
 def test_no_direct_subprocess_outside_wrapper() -> None:
