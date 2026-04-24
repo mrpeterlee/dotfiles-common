@@ -156,6 +156,30 @@ main() {
         help|--help|-h)
             cmd_help
             ;;
+        agents)
+            sub="${1:-help}"
+            shift || true
+            case "$sub" in
+                apply|backup|restore|update|diff|status)
+                    source "${SCRIPT_DIR}/lib/agents/common.sh"
+                    source "${SCRIPT_DIR}/lib/agents/${sub}.sh"
+                    "cmd_${sub}" "$@"
+                    ;;
+                help|*)
+                    cat <<'AGENTS_HELP'
+Usage: ./cli agents <subcommand> [args...]
+
+Subcommands:
+  apply    Apply agent configs (claude/codex/opencode/gemini) via chezmoi
+  backup   Capture live ~/.claude state into source via chezmoi re-add
+  restore  Full agent setup from scratch (1Password CLI, agent CLIs, MCP)
+  update   Update agent configs from repo
+  diff     Preview chezmoi changes for agent configs
+  status   Show agent CLI install + config status
+AGENTS_HELP
+                    ;;
+            esac
+            ;;
         *)
             error "Unknown command: $cmd"
             echo ""
