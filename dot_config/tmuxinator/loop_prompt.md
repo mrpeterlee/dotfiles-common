@@ -261,6 +261,203 @@ filter; it is independent of §5's post-PR merge authority.
    in the PR body with the operator's message ID and reason, and
    register a follow-up `TaskCreate` to run the review post-merge.
 
+## 4b. Pre-PR behavioural gate — before `gh pr create`
+
+Runs BEFORE §4a. §4a is an independent second opinion on the diff;
+§4b is first-person verification that the change actually works. The
+operator does not see the diff until both gates have passed.
+
+The gate has three steps: **classify**, **describe + test**, **share
+with §4a**. Output is `PASS` / `FAIL` / `SKIP` written as a verdict
+artefact the rest of the flow consumes.
+
+### Step 1 — Classify the change set
+
+If `gstack-diff-scope` is installed (check: `command -v gstack-diff-scope`),
+source it first to get the baseline scope flags (`SCOPE_DOCS`,
+`SCOPE_CODE`, `SCOPE_PROMPTS`, `SCOPE_CONFIG`, `SCOPE_MIGRATIONS`,
+`SCOPE_TESTS`). Use those as a first-pass signal; fall through to the
+decision tree for precision and for the `prompt_like` /
+`md_with_code` tags it does not emit.
+
+Run `git diff --name-only --diff-filter=ACMR origin/<base>...HEAD` and
+walk this decision tree top to bottom. **First match wins.**
+
+0. **Override check.**
+   - `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Skip:'`
+     → skip, record the reason from the trailer.
+   - `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Run:'`
+     → run, record the reason.
+   - `gh pr view --json labels --jq '.labels[].name' 2>/dev/null`
+     containing `gate-force-run` / `gate-force-skip` (when re-running
+     on an existing PR) → run / skip accordingly.
+
+1. **Empty diff** → skip, reason `no files changed`.
+
+2. **Hard-RUN globs.** Any hit ⇒ run, tag as `code`:
+
+       **/*.py **/*.ts **/*.tsx **/*.js **/*.go **/*.rs **/*.sh
+       **/Makefile **/Dockerfile* **/pyproject.toml **/package.json
+       **/uv.lock **/poetry.lock **/requirements*.txt
+       **/*.tmpl **/executable_*.sh **/run_once_*.sh   (chezmoi)
+       .github/workflows/*.{yml,yaml}
+       ansible/**/*.{yml,yaml,j2}
+       terraform/**/*.{tf,tfvars}
+       gitops/**/*.{yml,yaml}
+       .claude/settings*.json  .claude/hooks/**
+
+3. **Prompt-surface globs.** Any hit ⇒ run, tag `prompt_like`:
+
+       CLAUDE.md  AGENTS.md
+       **/loop_prompt*.md
+       **/skills/*/SKILL.md   **/agents/*.md
+       .agents/claude/rules/**/*.md
+       .agents/claude/skills/**/SKILL.md
+       .agents/claude/commands/**/*.md
+
+4. **Embedded-code sniff** on remaining `*.md`. If the diff hunks
+   contain fenced ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ```
+   blocks ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
+   `<!-- gate:run -->` marker → run, tag `md_with_code`.
+
+5. **Docs-only residue.** All remaining files are inert: `*.md` with
+   no embedded code, `*.txt`, `*.rst`, `docs/**`, `**/*.png`,
+   `**/*.svg`, `CHANGELOG*`, `README*` → skip, reason
+   `docs-only: N markdown + M image files, no code/config/prompt surfaces`.
+
+6. **Default** → run, tag `unknown`. Unknown extensions bias toward
+   running — false-positive-run is cheap; false-positive-skip ships
+   untested code.
+
+Write the verdict and manifest to `.claude/pre-pr/<head-sha>/verdict.json`:
+
+    {
+      "verdict": "run" | "skip",
+      "reason": "...",
+      "surfaces": ["code", "prompt_like", ...],
+      "files_needing_tests": [...],
+      "prompt_files": [...],
+      "base_sha": "...",
+      "head_sha": "..."
+    }
+
+On `skip`, paste the one-line justification into the PR body under a
+`## Pre-PR behavioural gate` section and fall through to §4a.
+
+### Step 2 — Describe the usages (runs on `verdict: run` only)
+
+For every file in `files_needing_tests` + every tagged
+`prompt_files` entry, write a structured description to
+`.claude/pre-pr/<head-sha>/usages.md`. One section per file. Each
+section:
+
+- **What changed** — the diff hunks in one paragraph.
+- **Who calls this** — every caller path you can identify via `grep`
+  / `rg` / LSP `Find references`. Name files, not prose.
+- **When it runs** — cron, request path, skill invocation, build step,
+  test harness, etc.
+- **Inputs** — the function signature, CLI flags, env vars read,
+  config keys consumed, prompt trigger text.
+- **Expected behaviour** — what observable effect the callers rely on.
+- **Failure modes** — what happens if this call fails, retries, or
+  returns empty.
+
+**Paraphrase-detection.** Dispatch ONE `Agent` (general-purpose) in
+parallel with no prior context — pass it the diff text and
+`files_needing_tests` list only. Ask it to produce its own usages
+list cold. Jaccard overlap on identified call-sites ≥ 0.7 → accept.
+< 0.7 → regenerate your own doc once with the missing call-sites
+added. Second miss → annotate `## Pre-PR behavioural gate: UNCERTAIN`
+in the PR body and escalate to Telegram with both lists. The cost is
+one extra Agent dispatch per PR (≈ $0.05); the benefit is catching
+the "skimmed the diff, wrote a shallow doc" failure mode.
+
+### Step 3 — Design + run the tests
+
+Route by tag. For each `files_needing_tests` entry, produce or update
+a test (or a batch of tests) per the profile, then run it. Red →
+Green. Keep artefacts under `.claude/pre-pr/<head-sha>/tests/`.
+
+**Compose with existing skills — do NOT re-invent:**
+
+- **Tag `code`** → invoke `Skill superpowers:test-driven-development`
+  with the usages.md section as the starting spec. Follow its RED →
+  verify-RED → GREEN → verify-GREEN → REFACTOR discipline. Unit +
+  integration where the surface warrants. Verify coverage ≥ repo
+  standard (80% if the repo enforces one, else at least every
+  call-site in usages.md is exercised).
+- **Tag `code` (shell subset)** → `shellcheck`; `bats` if the repo
+  has a `tests/bats/` tree, else generate a minimal harness driven by
+  the usages.md (stub env, capture stdout/stderr/exit, assert).
+- **Config (yaml/tf/ansible/workflows)** → dry-run / lint:
+  `actionlint` for workflows, `ansible-lint --syntax-check` for
+  playbooks, `terraform validate && terraform plan` for .tf,
+  `jq .` / `yq '.'` schema check for loose JSON/YAML. No unit tests
+  required; dry-run must pass clean.
+- **Tag `prompt_like`** → (a) **static-shape tests**: frontmatter
+  parses, every required section heading is present, intra-repo links
+  resolve, token count fits the host's context budget. (b) **smoke
+  loop** (when the change affects a decision rule, not just prose):
+  craft one fixture input that exercises the new rule, dispatch a
+  single-turn `Skill` invocation or `claude -p` sub-session with the
+  edited prompt, assert the expected terminal state (a section
+  referenced, a tool called, a verdict line emitted). Do NOT chase
+  golden-behavioural diffs — too brittle.
+- **Tag `md_with_code`** → extract fenced blocks; prove they at least
+  parse: `bash -n`, `python -m py_compile`, `yq '.'`, `jq .`. Any
+  parse error → fail the gate.
+
+**Behavioural-coverage audit (tag `code` only).** Once tests are
+green, dispatch the `pr-test-analyzer` agent with the diff + the new
+tests. Its job is to verify the tests actually exercise the changed
+behaviour — not just the happy path, and not just lines that already
+had coverage. If it returns CRITICAL or HIGH findings, treat them as
+[P1] and add / strengthen tests before proceeding. MEDIUM / LOW go
+under "Deferred P2s" in the PR body.
+
+**Close the gate with `superpowers:verification-before-completion`.**
+Invoke it before writing `verdict.json`. Its IDENTIFY → RUN → READ →
+VERIFY → CLAIM walk prevents "I ran the tests" without the matching
+evidence artefact. The output of its CLAIM step is what the
+`verdict.json` `reason` field quotes.
+
+**Convergence.** 3 generate→run cycles per usage, 10-minute wall
+clock per cycle. On exhaustion:
+
+1. Write `verdict.json` with `"verdict": "fail"`, `"reason": "<what
+   failed>"`.
+2. Open the PR as **draft**. Prepend the PR body with a
+   `## Pre-PR behavioural gate: FAIL` block naming each failing test
+   and the usages.md entry it tracks.
+3. Send ONE Telegram reply with the last failing output trimmed to
+   ~20 lines + a link to the full log under
+   `.claude/pre-pr/<head-sha>/`.
+
+Silent skip is forbidden. Same rule as §4a.6.
+
+### Step 4 — Hand off to §4a
+
+When `verdict.json` says `pass` (or `skip`), append these lines to the
+planned PR body before §4a runs:
+
+    ## Pre-PR behavioural gate
+
+    - Verdict: `<pass | skip>` (`<reason>`)
+    - Classifier tags: `<surfaces>`
+    - Artefacts: `.claude/pre-pr/<head-sha>/`
+
+Then invoke §4a's codex review with `--append-prompt` pointing at
+`.claude/pre-pr/<head-sha>/usages.md` (when it exists) so the reviewer
+sees how you claim the code is used, not just what changed. The two
+gates reinforce each other.
+
+### Emergency skip
+
+Mirrors §4a.7. Explicit Telegram message naming the PR; annotate
+`## Pre-PR behavioural gate skipped` with the operator's message ID
+and reason; register a follow-up `TaskCreate` to run the gate
+post-merge.
+
 ## 5. PR lifecycle — you own it through merge
 
 Opening a PR creates a commitment. Do not hand it back.
