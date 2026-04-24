@@ -324,25 +324,37 @@ file — do NOT stop walking the file list after a hit; continue to the
 next file):**
 
 1. **`config`** — infra / workflow / runtime config that has a
-   dedicated dry-run/lint path (NOT TDD):
+   dedicated dry-run/lint path (NOT TDD). Use `**/` prefixes so the
+   rules match chezmoi source paths (`private_dot_claude/settings.json`),
+   rendered destinations (`.claude/settings.json`,
+   `~/.claude/settings.json`), and nested monorepo locations:
 
-       .github/workflows/**/*.{yml,yaml}
-       ansible/**/*.{yml,yaml,j2}
-       terraform/**/*.{tf,tfvars}
-       gitops/**/*.{yml,yaml}
-       .claude/settings*.json
+       **/.github/workflows/**/*.{yml,yaml}
+       **/ansible/**/*.{yml,yaml,j2}
+       **/terraform/**/*.{tf,tfvars}
+       **/gitops/**/*.{yml,yaml}
+       **/.claude/settings*.json
+       **/private_dot_claude/settings*.json
+       **/dot_claude/settings*.json
        **/docker-compose*.{yml,yaml}
        **/Dockerfile*
 
-2. **`prompt_like`** — files that drive LLM behaviour:
+2. **`prompt_like`** — files that drive LLM behaviour. All patterns
+   are applied against the full diff path (no implicit anchoring).
+   Use `**/` prefixes to match chezmoi-source paths
+   (`private_dot_claude/CLAUDE.md`, `dot_codex/AGENTS.md`) and
+   rendered destinations (`~/.claude/CLAUDE.md`) alike:
 
-       CLAUDE.md  AGENTS.md
+       **/CLAUDE.md           **/AGENTS.md
        **/loop_prompt*.md
-       **/skills/*/SKILL.md
-       **/agents/*.md
+       **/skills/**/SKILL.md           **/skills/**/symlink_SKILL.md
+       **/agents/**/*.md               **/commands/**/*.md
+       **/rules/**/*.md
        .agents/claude/rules/**/*.md
        .agents/claude/skills/**/SKILL.md
        .agents/claude/commands/**/*.md
+       dot_codex/**/*.md
+       private_dot_claude/**/*.md
 
 3. **`code`** — source code subject to full TDD. Runs BEFORE `shell`
    so that hook scripts and other "shell but needs code-level
@@ -534,15 +546,20 @@ it does not pick one. Keep artefacts under
   - `docker-compose*`, `Dockerfile*` → `docker compose config` /
     `hadolint`.
   Dry-run must exit clean.
-- **Tag `prompt_like`** → (a) **static-shape tests**: frontmatter
-  parses, every required section heading is present, intra-repo links
-  resolve, token count fits the host's context budget. (b) **smoke
-  loop** (when the change affects a decision rule, not just prose):
-  craft one fixture input that exercises the new rule, dispatch a
-  single-turn `Skill` invocation or `claude -p` sub-session with the
-  edited prompt, assert the expected terminal state (a section
-  referenced, a tool called, a verdict line emitted). Do NOT chase
-  golden-behavioural diffs — too brittle.
+- **Tag `prompt_like`** → (a) **static-shape tests**: **if** the
+  file begins with YAML frontmatter (`---` on line 1), it parses
+  cleanly — otherwise skip the frontmatter check (most ACap /
+  dotfiles prompts are plain Markdown without frontmatter and must
+  not be penalised for it); every required section heading that the
+  file's own convention declares is present; intra-repo links
+  resolve (`rg '\]\([./]'` then check target exists); token count
+  fits the host's context budget. (b) **smoke loop** (when the
+  change affects a decision rule, not just prose): craft one fixture
+  input that exercises the new rule, dispatch a single-turn `Skill`
+  invocation or `claude -p` sub-session with the edited prompt,
+  assert the expected terminal state (a section referenced, a tool
+  called, a verdict line emitted). Do NOT chase golden-behavioural
+  diffs — too brittle.
 - **Tag `md_with_code`** → extract fenced blocks; prove they at least
   parse: `bash -n`, `python -m py_compile`, `yq '.'`, `jq .`. Any
   parse error → fail the gate.
@@ -597,24 +614,34 @@ planned PR body before §4a runs:
 `--base`, `--commit`, `--title`, `--uncommitted`, `--config`,
 `--enable`, `--disable`, plus one positional `[PROMPT]` that is
 mutually exclusive with `--base`). Codex also runs BEFORE
-`gh pr create`, so there is no PR body it can read. To actually
-surface the usages doc to codex:
+`gh pr create`, so there is no PR body it can read.
 
-1. **Stage and commit** the `.claude/pre-pr/<head-sha>/` artefacts
-   (usages.md, verdict.json, test logs) onto the feature branch as
-   part of the final pre-review push. Codex then sees `usages.md`
-   as a new `.md` file in the diff it reviews and can reason about
-   the described usages against the code hunks that land alongside
-   it. The artefacts are git-tracked, gitignored in main via
-   `.gitignore`, and cleaned up on merge.
-2. **Alternative** (when artefacts must not land on the feature
-   branch): run `codex review --base <base>` for the diff review
-   first, then a secondary `codex exec` pass with the usages.md
-   path in its prompt for targeted follow-up. Two calls, more
-   tokens, only use if policy forbids committing the artefacts.
+**Default: the two gates are independent.** §4b's artefacts live
+under `.claude/pre-pr/<head-sha>/` in the worktree. That path should
+be in the repo's `.gitignore` (if it is not, the session adds it in
+a setup commit — see below) so the artefacts are never committed,
+never reach codex's diff, and never land on `main`. §4a then runs
+against the actual code/config/prompt diff, which is the right
+scope for a "second opinion on the change". The usages.md is
+internal bookkeeping for §4b's own convergence + for the operator's
+audit trail, not a codex input.
 
-Default path is #1. The two gates reinforce each other via shared
-git-tracked artefacts, not via a CLI flag and not via the PR body.
+**First-time setup** (one-shot per repo): if `.gitignore` does not
+already ignore `.claude/pre-pr/`, the session opens a one-line PR
+(or folds into the first §4b-using PR) adding:
+
+    .claude/pre-pr/
+
+to `.gitignore`. This PR itself skips §4b — the classifier sees
+only `.gitignore` changes, which fall through to the `config` tag
+and the `jq`/shape test is a no-op for gitignore (treat as docs).
+
+**Escape hatch** (rare): when a reviewer genuinely wants codex to
+see the usages.md, run `codex exec "Read
+.claude/pre-pr/<head-sha>/usages.md and judge whether the diff
+matches the claimed usages"` as a secondary pass AFTER the primary
+`codex review --base <base>`. Two calls, more tokens. Only use when
+the complexity of the change warrants it.
 
 ### Emergency skip
 
