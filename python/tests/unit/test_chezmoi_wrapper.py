@@ -224,3 +224,18 @@ def test_dry_run_skipped_when_mutating_verb_appears_after_double_dash() -> None:
     # Sanity: the same args without `--` would inject (apply IS a mutating verb name)
     result2 = w.build_argv(["git", "grep", "apply"])
     assert "--dry-run" in result2
+
+
+def test_dry_run_inserted_before_passthrough_separator() -> None:
+    """Codex P3 r5: when args contain `--`, --dry-run must be inserted BEFORE it.
+
+    Prevents `chezmoi apply -- target --dry-run` (which chezmoi would treat as
+    a target name) instead of the correct `chezmoi apply --dry-run -- target`.
+    """
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    result = w.build_argv(["apply", "--", "target1", "target2"])
+    dash_idx = result.index("--")
+    dry_run_idx = result.index("--dry-run")
+    assert dry_run_idx < dash_idx, f"--dry-run at {dry_run_idx} must precede -- at {dash_idx}: {result}"
+    # Sanity: passthrough args after -- preserved verbatim
+    assert result[dash_idx + 1 : dash_idx + 3] == ["target1", "target2"]

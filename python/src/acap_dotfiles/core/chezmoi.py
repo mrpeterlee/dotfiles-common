@@ -136,9 +136,22 @@ class Wrapper:
         argv: list[str] = [str(self.binary), *_CANONICAL_ARGS]
         if self.source is not None:
             argv.extend(["--source", str(self.source)])
-        argv.extend(args)
+        # Insert --dry-run BEFORE the first `--` if any (so chezmoi parses it as
+        # an option, not as a target/passthrough operand). Codex P3 r5: e.g.
+        # `dots --dry-run apply -- target` would otherwise produce
+        # `chezmoi apply -- target --dry-run` and chezmoi treats --dry-run as
+        # a target name.
         if self.dry_run and _contains_mutating_verb(args) and "--dry-run" not in args:
-            argv.append("--dry-run")
+            try:
+                dash_idx = list(args).index("--")
+                argv.extend(args[:dash_idx])
+                argv.append("--dry-run")
+                argv.extend(args[dash_idx:])
+            except ValueError:
+                argv.extend(args)
+                argv.append("--dry-run")
+        else:
+            argv.extend(args)
         return argv
 
     def run(

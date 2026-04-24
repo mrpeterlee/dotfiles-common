@@ -42,6 +42,13 @@ def update(ctx: click.Context) -> None:
     if rc2 != 0:
         click.echo(f"WARN: --refresh-externals exited {rc2} (best-effort, continuing)", err=True)
 
-    # Phase 3-4: conda env rebuild + essential tools install — out of P3 scope
-    click.echo("\nNote: conda env rebuild and essential-tools install are still in bash `cli`.")
-    click.echo("Run `~/.files/cli conda build` and `~/.files/cli restore` manually if needed.")
+    # Phase 3-4: conda env rebuild + essential tools install — out of P3 scope.
+    # Direct users at the legacy bash entry-point (lib/cli-legacy.sh), NOT
+    # `~/.files/cli` — the cli shim now delegates `restore` to dots restore
+    # (also out of P3 scope as a stub for the install_essential_tools phase).
+    # Codex P2 caught the routing mismatch on bce3f1b. `cli conda` still
+    # works through the shim because the shim explicitly forwards `conda`
+    # and `agents` to lib/cli-legacy.sh.
+    click.echo("\nNote: conda env rebuild and essential-tools install stay in bash for P3.")
+    click.echo("  conda env: ~/.files/cli conda build  (routed through legacy shim)")
+    click.echo("  essential tools: ~/.files/lib/cli-legacy.sh restore  (direct invocation)")
