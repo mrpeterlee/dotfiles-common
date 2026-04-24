@@ -337,14 +337,22 @@ ssh <remote> 'sudo bash ~/.files/env/setup-bashrc.sh'
 
 ## AI Agent Configs
 
-Agent configs (Claude Code, Codex, OpenClaw) have moved to `~/.agents`
-(separate repo).
+Claude Code, Codex, and OpenCode configs are managed in this repo under:
 
-- `~/.agents/cli install` -- install all agent configs
-- `~/.agents/cli snapshot` -- capture evolved workspace files
-- The deploy script
-  (`.chezmoiscripts/run_after_60-deploy-ai-agents.sh.tmpl`) triggers
-  `~/.agents/cli install` automatically.
+- `dot_claude/` → `~/.claude/` (CLAUDE.md, settings.json, commands/, skills/)
+- `dot_codex/` → `~/.codex/` (AGENTS.md, config.toml, prompts/)
+- `dot_config/opencode/` → `~/.config/opencode/` (AGENTS.md, opencode.json, oh-my-opencode.jsonc)
+
+MCP servers register via the chezmoi script
+`.chezmoiscripts/run_onchange_after_install-mcp.sh.tmpl`, which reads
+`mcp/servers.json` and calls `claude mcp add-json -s user` per entry.
+The script is idempotent (remove-then-add) and re-runs whenever the
+manifest's SHA256 changes (the hash is embedded as a comment so
+chezmoi's `run_onchange_*` change-detection picks it up).
+
+Previously these configs lived in the separate `mrpeterlee/.agents`
+repo, which was absorbed into this repo on 2026-04-24 (P2 of the
+dotfiles-unification project).
 
 ## Related Documentation
 
