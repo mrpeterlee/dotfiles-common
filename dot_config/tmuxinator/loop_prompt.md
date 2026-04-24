@@ -385,11 +385,20 @@ terminal values plus an `in_progress` transient:
 
 Step 3 rewrites `verdict.json` when tests complete:
 
-- All profiles green + `pr-test-analyzer` clean + `superpowers:verification-before-completion`
-  CLAIM passes → `verdict = "pass"` (terminal, falls through to §4a).
+- Every profile for every non-empty bucket in `files_by_tag` passed,
+  AND if `code ∈ surfaces` then `pr-test-analyzer` returned clean,
+  AND `superpowers:verification-before-completion` CLAIM passes →
+  `verdict = "pass"` (terminal, falls through to §4a).
 - Convergence exhausted or a profile's mandatory check refuses to go
   green → `verdict = "fail"` (terminal, draft-PR path).
 - On abort / timeout → `verdict = "error"` (terminal, escalate).
+
+Surface-specific gates only apply when that surface is present.
+A prompt-only PR passes without `pr-test-analyzer` because
+`code ∉ surfaces`; a config-only PR passes on dry-run-clean alone.
+`superpowers:verification-before-completion` is the one check that
+runs for every non-skip verdict — it is the "fresh-evidence"
+sign-off, not a surface-specific test.
 
 §4a consumes `verdict.json` and proceeds ONLY when `verdict ∈ {"pass",
 "skip"}`. `in_progress` blocks §4a; `fail` and `error` route to the
@@ -405,32 +414,50 @@ Manifest shape:
       "reason": "...",
       "surfaces": ["code", "prompt_like", "config", ...],
       "files_by_tag": {
-        "code":        ["core/src/acap/pipeline/gate.py"],
-        "config":      [".github/workflows/ci.yml"],
-        "prompt_like": ["AGENTS.md"],
+        "code":        [
+          {"path": "core/src/acap/pipeline/gate.py", "deletion": false}
+        ],
+        "config":      [
+          {"path": ".github/workflows/ci.yml", "deletion": false}
+        ],
+        "prompt_like": [
+          {"path": "AGENTS.md",               "deletion": false},
+          {"path": "retired/old-prompt.md",   "deletion": true}
+        ],
         "shell":       [],
         "md_with_code":[],
-        "docs":        ["docs/reference/.../plan.md"]
+        "docs":        [
+          {"path": "docs/reference/.../plan.md", "deletion": false}
+        ]
       },
-      "deletions":    ["old/script.sh"],
       "base_sha": "...",
       "head_sha": "..."
     }
 
 `files_by_tag` is the single source of truth for routing in Step 3.
-Step 3 iterates over every non-empty bucket and runs the matching
-test profile — not just the first, not just the primary. On `skip`,
-paste the one-line justification into the PR body under a
-`## Pre-PR behavioural gate` section and fall through to §4a.
+Each entry is an object `{path, deletion}` so Step 3 can distinguish
+"test the new behaviour" (`deletion: false`) from "audit callers
+still referencing the removed path" (`deletion: true`). Step 3
+iterates every non-empty bucket and runs the matching test profile
+— not just the first, not just the primary. On `skip`, paste the
+one-line justification into the PR body under a `## Pre-PR
+behavioural gate` section and fall through to §4a.
 
-### Step 2 — Describe the usages (runs on `verdict: run` only)
+### Step 2 — Describe the usages (runs when `verdict == in_progress`)
 
-For every file listed under `files_by_tag.code`, `files_by_tag.shell`,
+Entered only when Step 1 produced non-docs surfaces and wrote
+`verdict: "in_progress"`. If Step 1 wrote `verdict: "skip"`, skip
+Step 2 and Step 3 entirely.
+
+For every entry in `files_by_tag.code`, `files_by_tag.shell`,
 `files_by_tag.prompt_like`, and `files_by_tag.md_with_code`, write a
 structured description to `.claude/pre-pr/<head-sha>/usages.md`.
 `files_by_tag.config` and `files_by_tag.docs` do not require a usages
 section (config is dry-run-only; docs are inert). One section per
-file. Each section:
+file. For entries with `deletion: true`, the section is a
+caller-sweep audit rather than a usage description: what callers
+exist(ed), which ones still reference the removed path, and evidence
+each remaining caller has been updated. Each regular section:
 
 - **What changed** — the diff hunks in one paragraph.
 - **Who calls this** — every caller path you can identify via `grep`
@@ -549,10 +576,16 @@ planned PR body before §4a runs:
     - Classifier tags: `<surfaces>`
     - Artefacts: `.claude/pre-pr/<head-sha>/`
 
-Then invoke §4a's codex review with `--append-prompt` pointing at
-`.claude/pre-pr/<head-sha>/usages.md` (when it exists) so the reviewer
-sees how you claim the code is used, not just what changed. The two
-gates reinforce each other.
+`codex review` has no `--append-prompt` (its supported flags are
+`--base`, `--commit`, `--title`, `--uncommitted`, `--config`,
+`--enable`, `--disable`, plus one positional `[PROMPT]` that is
+mutually exclusive with `--base`). Pass artefacts to codex by
+writing them to a location in the worktree that codex's sandbox can
+read: `.claude/pre-pr/<head-sha>/usages.md`. Codex runs with
+`-C $_REPO_ROOT` read-only sandbox access, so it can `Read` or `cat`
+the file during review if the session's Step 4 PR-body snippet above
+names the path. The two gates reinforce each other via shared
+worktree artefacts, not a CLI flag.
 
 ### Emergency skip
 
