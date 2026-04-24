@@ -124,11 +124,21 @@ __pycache__/
 # bootstrap session — contains operator-personal data (SSH passwords,
 # AWS account IDs, infra IPs, etc.) that the org-plaintext regex
 # doesn't fully catch. Treat as session-state, like .claude/sessions/.
-private_dot_claude/teams/*/inboxes/
+#
+# NOTE: chezmoi matches .chezmoiignore against TARGET paths (the
+# rendered destination, e.g. `.claude/...`), NOT chezmoi source-state
+# paths (e.g. `private_dot_claude/...`). chezmoi also strips the
+# `private_` mode-attr prefix when computing the target name (so
+# source `private_access.json` deploys as target `access.json`).
+# Earlier P2.5 patterns got both axes wrong; the live runtime files
+# are named `access.json` and `bot.pid` on disk, not `private_*`.
+# tests/hygiene/test_chezmoiignore_target_paths.sh guards the
+# source-state regression; correct target filenames are below.
+.claude/teams/*/inboxes/
 
 # === P2.5 follow-up: channels/ runtime + access files ===
-# bot.pid is process state; private_access.json holds operator allowlist
+# bot.pid is process state; access.json holds operator allowlist
 # (Telegram chat_ids etc.). Same structural intent as the existing
 # session-state guards.
-private_dot_claude/channels/*/bot.pid
-private_dot_claude/channels/*/private_access.json
+.claude/channels/*/bot.pid
+.claude/channels/*/access.json
