@@ -21,6 +21,8 @@ patterns=(
 # - .claude/CLAUDE.md (repo-internal AGENTS.md-equivalent, narrates the absorption)
 # - tests/hygiene/test_claude_skills_present.sh (meta-reference: regression guard
 #   docstring describes the bug in the absorbed CLI)
+# - lib/agents/** (namespaced merge of .agents lib/*.sh; cosmetic ~/.agents
+#   string in user-facing echo messages, no runtime dependency)
 exclude=(
   ':!tests/hygiene/test_no_agents_refs.sh'
   ':!tests/hygiene/test_claude_skills_present.sh'
@@ -28,6 +30,8 @@ exclude=(
   ':!README.md'
   ':!.claude/CLAUDE.md'
   ':!.git/**'
+  ':!dot_codex/skills/dot_system/plugin-creator/**'
+  ':!lib/agents/**'
 )
 
 bad=0

@@ -1,0 +1,24 @@
+# Agent CLI install manifest. Consumed by:
+# .chezmoiscripts/run_once_after_70-install-claude-plugins.sh.tmpl
+#
+# Keep in sync with the active operator policy. To add a new agent CLI npm
+# global, marketplace, or plugin, edit here and the next chezmoi apply will
+# install it.
+
+npm_packages:
+  - "@google/gemini-cli"
+  - "@openai/codex"
+
+claude_marketplaces:
+  - "https://github.com/affaan-m/everything-claude-code"
+  - "https://github.com/thedotmack/claude-mem"
+  - "https://github.com/anthropics/skills"
+
+claude_plugins:
+  - "context7@claude-plugins-official"
+  - "commit-commands@claude-plugins-official"
+  - "telegram@claude-plugins-official"
+  - "skill-creator@claude-plugins-official"
+  - "superpowers@claude-plugins-official"
+  - "everything-claude-code@everything-claude-code"
+  - "claude-mem@thedotmack"

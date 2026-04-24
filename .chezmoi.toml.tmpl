@@ -32,9 +32,13 @@
 {{- /* Detect if 1Password CLI is available and signed in */ -}}
 {{- $hasOp := false -}}
 {{- $opSignedIn := false -}}
+{{- $opMode := "account" -}}
 {{- if lookPath "op" -}}
 {{-   $hasOp = true -}}
 {{-   $opSignedIn = (output "op" "account" "list" "--format=json" | fromJson | len) | gt 0 -}}
+{{-   if env "OP_SERVICE_ACCOUNT_TOKEN" -}}
+{{-     $opMode = "service" -}}
+{{-   end -}}
 {{- end -}}
 
 # Root-level chezmoi configuration (must be before any sections)
@@ -76,6 +80,7 @@ sourceDir = {{ joinPath .chezmoi.homeDir ".files" | quote }}
 {{ if $hasOp -}}
 [onepassword]
     command = "op"
+    mode = {{ $opMode | quote }}
     prompt = false
 {{- end }}
 

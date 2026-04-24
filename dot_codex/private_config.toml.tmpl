@@ -1,0 +1,25 @@
+model = "gpt-5.4"
+preferred_auth_method = "chatgpt"
+sandbox_mode = "danger-full-access"
+model_reasoning_effort = "high"
+approval_policy = "never"
+
+[features]
+web_search_request = true
+streamable_shell = true
+
+[sandbox_workspace_write]
+network_access = true
+
+[projects."{{ .chezmoi.homeDir }}/.files"]
+trust_level = "trusted"
+
+[projects."{{ .chezmoi.homeDir }}/.agents"]
+trust_level = "trusted"
+
+[notice]
+"hide_gpt-5.1-codex-max_migration_prompt" = true
+hide_full_access_warning = true
+
+[notice.model_migrations]
+"gpt-5.1-codex-max" = "gpt-5.4"

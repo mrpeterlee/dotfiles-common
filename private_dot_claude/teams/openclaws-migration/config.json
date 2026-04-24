@@ -1,0 +1,19 @@
+{
+  "name": "openclaws-migration",
+  "description": "Migrate openclaw instances to unified container management repo at ~/.openclaws",
+  "createdAt": 1770827782152,
+  "leadAgentId": "team-lead@openclaws-migration",
+  "leadSessionId": "737b2630-b077-469f-af71-85a34bd38888",
+  "members": [
+    {
+      "agentId": "team-lead@openclaws-migration",
+      "name": "team-lead",
+      "agentType": "team-lead",
+      "model": "claude-opus-4-6",
+      "joinedAt": 1770827782152,
+      "tmuxPaneId": "",
+      "cwd": "/home/peter/.openclaws",
+      "subscriptions": []
+    }
+  ]
+}
