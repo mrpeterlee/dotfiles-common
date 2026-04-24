@@ -28,6 +28,8 @@ jobs:
         run: ./tests/hygiene/test_mcp_servers_valid.sh
       - name: No ~/.agents references
         run: ./tests/hygiene/test_no_agents_refs.sh
+      - name: Chezmoiignore target-path form
+        run: ./tests/hygiene/test_chezmoiignore_target_paths.sh
 
   render-matrix:
     name: Chezmoi render (${{ matrix.os }})
