@@ -1,53 +1,84 @@
----
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(ls:*), Bash(find:*)
-argument-hint: [scope: all | specific-topic]
-description: Update documentation in docs/ folder for future Claude sessions
----
+# Update Documentation
 
-## Context
+Sync documentation with the codebase, generating from source-of-truth files.
 
-Current documentation files:
-!`find docs/ -name "*.md" 2>/dev/null | head -20`
+## Step 1: Identify Sources of Truth
 
-Current project structure:
-!`ls -la`
+| Source | Generates |
+|--------|-----------|
+| `package.json` scripts | Available commands reference |
+| `.env.example` | Environment variable documentation |
+| `openapi.yaml` / route files | API endpoint reference |
+| Source code exports | Public API documentation |
+| `Dockerfile` / `docker-compose.yml` | Infrastructure setup docs |
 
-## Task
+## Step 2: Generate Script Reference
 
-Update the documentation in the `docs/` folder to help future Claude sessions understand this codebase. Focus on: $ARGUMENTS
+1. Read `package.json` (or `Makefile`, `Cargo.toml`, `pyproject.toml`)
+2. Extract all scripts/commands with their descriptions
+3. Generate a reference table:
 
-## Documentation Standards
+```markdown
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server with hot reload |
+| `npm run build` | Production build with type checking |
+| `npm test` | Run test suite with coverage |
+```
 
-When updating docs, ensure each document:
+## Step 3: Generate Environment Documentation
 
-1. **Has a clear purpose** - State what the doc covers in the first paragraph
-2. **Is scannable** - Use headers, bullet points, and code blocks
-3. **Stays current** - Remove outdated information, add new features
-4. **Links related docs** - Cross-reference other relevant documentation
+1. Read `.env.example` (or `.env.template`, `.env.sample`)
+2. Extract all variables with their purposes
+3. Categorize as required vs optional
+4. Document expected format and valid values
 
-## Required Documentation Structure
+```markdown
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string | `postgres://user:pass@host:5432/db` |
+| `LOG_LEVEL` | No | Logging verbosity (default: info) | `debug`, `info`, `warn`, `error` |
+```
 
-For each major area, ensure docs cover:
+## Step 4: Update Contributing Guide
 
-- **Overview** - What it is and why it exists
-- **Architecture** - How components connect and interact
-- **Key Files** - Important files and their purposes
-- **Common Patterns** - Recurring patterns and conventions used
-- **Getting Started** - How to work with this area
+Generate or update `docs/CONTRIBUTING.md` with:
+- Development environment setup (prerequisites, install steps)
+- Available scripts and their purposes
+- Testing procedures (how to run, how to write new tests)
+- Code style enforcement (linter, formatter, pre-commit hooks)
+- PR submission checklist
 
-## Steps
+## Step 5: Update Runbook
 
-1. Read existing docs in `docs/` folder
-2. Analyze the current codebase structure
-3. Identify gaps between code and documentation
-4. Update or create documentation as needed
-5. Ensure consistency across all docs
-6. Summarize changes made
+Generate or update `docs/RUNBOOK.md` with:
+- Deployment procedures (step-by-step)
+- Health check endpoints and monitoring
+- Common issues and their fixes
+- Rollback procedures
+- Alerting and escalation paths
 
-## Output
+## Step 6: Staleness Check
 
-After updating, provide a summary of:
-- Documents updated
-- New documents created
-- Key information added
-- Any areas needing human review
+1. Find documentation files not modified in 90+ days
+2. Cross-reference with recent source code changes
+3. Flag potentially outdated docs for manual review
+
+## Step 7: Show Summary
+
+```
+Documentation Update
+──────────────────────────────
+Updated:  docs/CONTRIBUTING.md (scripts table)
+Updated:  docs/ENV.md (3 new variables)
+Flagged:  docs/DEPLOY.md (142 days stale)
+Skipped:  docs/API.md (no changes detected)
+──────────────────────────────
+```
+
+## Rules
+
+- **Single source of truth**: Always generate from code, never manually edit generated sections
+- **Preserve manual sections**: Only update generated sections; leave hand-written prose intact
+- **Mark generated content**: Use `<!-- AUTO-GENERATED -->` markers around generated sections
+- **Don't create docs unprompted**: Only create new doc files if the command explicitly requests it
