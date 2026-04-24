@@ -834,3 +834,219 @@ local commits survive only in the reflog — confusing, and easy to
 miss. Worktrees are independent directories with their own HEAD, so
 resets on the main clone do not affect them. The deploy pipeline
 continues to own the main clone; you own your worktree.
+
+## 7. Idle-time maintenance — before picking up new tasks
+
+Every cron tick, AFTER §0 (MCP guard) and §1 (sweep) produce an empty
+result AND no §4a/§4b/§5 flow is in progress, the session is **idle**.
+Before picking up any new operator-driven task, run this block as a
+three-stage state machine — DISCOVER → EXECUTE → NOTIFY.
+
+Staging is load-bearing: discovery never executes in-band. Follow-ups
+that produce PR-worthy work become `TaskCreate` entries that the NEXT
+tick's §1 sweep drains. This structurally prevents the "idle spawns
+follow-up spawns more follow-ups, idle never idle again" infinite
+loop.
+
+### Idleness definition (all four must hold)
+
+1. `TaskList` returns no entries.
+2. `gh search prs --author @me --state open --limit 1` returns `[]`.
+3. `CronList` has no entries whose prompt matches
+   `pr-codex-watch|PR #[0-9]+|/loop 1m|Poll .* PR`  — i.e., no
+   minute-level polling loops active.
+4. No verification artefacts pending at
+   `${TELEGRAM_STATE_DIR}/mcp-reconnect.count` > 0 OR
+   `.claude/pre-pr/<head-sha>/verdict.json` == `in_progress`.
+
+### Idempotency marker
+
+Compute the tick identifier as the most recent cron boundary floor:
+
+    TICK=$(date -u -d "$(date -u +%H:%M)  $(date -u +%Y-%m-%d)" \
+             +%Y%m%dT%H%M 2>/dev/null \
+           || date -u +%Y%m%dT%H00)   # 30-min floor; fallback hourly
+
+and write marker `~/.claude/idle-stage/${TICK}` whose **content** is
+the current stage (`DISCOVER|EXECUTE|NOTIFY|DONE`). File presence
+means the block has begun on this tick; content means where it is.
+If the file already exists and holds `DONE`, skip the block entirely
+— the tick has already been serviced. If it holds any other value,
+resume from that stage (prior execution aborted; pick up where it
+left off). If the file is older than 2 hours without a `DONE`, treat
+it as stale and restart from `DISCOVER`. `~/.claude/idle-stage/` is
+nightly-pruned by the tmuxinator bootstrap (`find ... -mtime +2
+-delete`).
+
+### Stage 1 — DISCOVER
+
+Walk this minimum row set (the starred rows from the design research
+— the seven where doing nothing causes visible harm). Every row
+emits either an in-band action or a `TaskCreate`; do NOT execute
+follow-up work in-band, only clean-ups.
+
+**Follow-ups (HIGH priority, operator-visible):**
+
+- **A1 — Deferred P2s in merged PR bodies (last 7 days).**
+
+      gh pr list --author @me --state merged --limit 20 \
+        --json number,body,mergedAt,repository \
+        -q '.[] | select(.mergedAt > (now - 7*86400 | todate))
+                | select(.body | test("Deferred P2s: (?!none)"; "i"))'
+
+  For each PR, parse the `## Pre-PR review` block; for each P2
+  bullet, `TaskCreate` with tag `follow-up,pr-<n>,deferred-p2` and
+  body `{repo, pr, finding, file:line if present}`.
+
+- **A2 — Pending TaskList entries already tagged `follow-up`.**
+
+      TaskList, filter status=pending AND tags contains "follow-up"
+
+  Non-empty → do NOT create new tasks. §1's next sweep picks them up
+  via the three-state machine.
+
+- **A4 — Draft PRs from @me (likely §4b FAIL survivors).**
+
+      gh pr list --author @me --state open --draft \
+        --json number,title,body,repository,updatedAt \
+        -q '.[] | select(.body
+                | test("Pre-PR (behavioural gate|review).*(FAIL|bypassed|skipped)"; "i"))
+                | select((.updatedAt | fromdateiso8601) < (now - 7200))'
+
+  (Only drafts older than 2h, to avoid racing an in-flight §4b
+  fail-and-retry.) For each, `TaskCreate` with tag
+  `follow-up,draft-pr,<n>` and body "re-run §4b gate; ready or
+  escalate".
+
+- **A7 — Chezmoi drift this session caused.**
+
+      chezmoi status 2>/dev/null | awk '$1 == "M" || $1 == "A"'
+
+  Non-empty → inspect diff; if target is correct, `TaskCreate` tag
+  `follow-up,chezmoi-apply`; if source needs update, `TaskCreate`
+  tag `follow-up,chezmoi-readd`. Do not auto-apply/readd in-band —
+  another session may be the legitimate author.
+
+**Clean-ups (safe + idempotent, executed IN-BAND in Stage 2):**
+
+- **B1 — Worktrees whose branch is merged.**
+
+      for r in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$r" ] || continue
+        git -C "$r" worktree list --porcelain 2>/dev/null
+      done
+
+  Cross-reference each worktree's branch against
+  `gh pr list --author @me --state merged --limit 30 --json headRefName,repository`.
+  Record to the EXECUTE queue; DO NOT remove yet. Skip the session's
+  own worktree (`basename "$PWD"` or `$TMUX_PANE`'s working dir).
+
+- **B4 — `CronList` entries whose PR already merged.**
+
+  For each cron whose prompt names a PR number (regex `PR #([0-9]+)`
+  OR `Poll .* PR #?([0-9]+)`), `gh pr view <n> --json state`. If
+  state ∈ `{MERGED, CLOSED}`, record to the EXECUTE queue as a
+  `CronDelete` target.
+
+- **B7 — Main clone has a feature branch checked out.**
+
+      for r in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$r" ] || continue
+        hb=$(git -C "$r" symbolic-ref --short HEAD 2>/dev/null) || continue
+        case "$hb" in
+          main|master) ;;
+          *) echo "DANGER: $r on feature branch $hb" ;;
+        esac
+      done
+
+  Non-empty → DO NOT auto-fix; this is the auto-deploy-wipe risk
+  scenario. Escalate to Telegram once with the affected repo + branch
+  and move on. (The auto-deploy cron will silently `git reset --hard
+  origin/main` and wipe local commits; the operator needs to know
+  which sister session caused this.)
+
+Advance marker to `EXECUTE`.
+
+### Stage 2 — EXECUTE
+
+Drain ONLY the clean-up queue produced by DISCOVER. Follow-ups
+already live in `TaskList`; the next cron tick's §1 sweep will pick
+them up. Do not drain follow-ups here — that violates the staging
+guarantee.
+
+For each queued clean-up:
+
+- `git -C <repo> worktree remove <path> && git -C <repo> branch -D <name>`
+  (idempotent; harmless if either step already happened).
+- `CronDelete <cron_id>` for merged-PR polling loops.
+
+If ANY clean-up fails, write the error to
+`~/.claude/idle-stage/${TICK}.errors` and continue — a failed remove
+of a stale worktree must not block the rest of the sweep. At end of
+stage, if the errors file is non-empty, Telegram-reply once with the
+concatenated error output.
+
+Docs updates: if a clean-up materially changed the truth value of a
+doc this session owns (e.g., closed a TODO entry in `~/acap/TODO.md`
+after executing its command, or a chezmoi readd invalidated a
+MEMORY.md gotcha), update the doc in-band **only if** the change
+is a deletion or a dated-audit-note append. Anything larger →
+`TaskCreate` tag `doc-update,needs-pr` for the next cycle.
+
+Advance marker to `NOTIFY`.
+
+### Stage 3 — NOTIFY (`/reflect` queue awareness, not invocation)
+
+`/reflect` is **inherently interactive** — it raises
+`AskUserQuestion` on every non-empty queue and has no
+`--auto-approve` mode. A blind `tmux send-keys "/reflect" Enter` in
+a cron-driven session with items in the queue WILL hang the pane at
+the first prompt; the subsequent cron tick cannot fire. Do NOT model
+`/reflect` on `/mcp reconnect` (§0).
+
+Pre-check the queue; if non-empty, notify the operator via Telegram
+and let them run `/reflect` out-of-band.
+
+    ENC=$(pwd | sed 's|/|-|g')
+    QF="$HOME/.claude/projects/${ENC}/learnings-queue.json"
+    if [ -f "$QF" ]; then
+      N=$(python3 -c "import json,pathlib; p=pathlib.Path('$QF'); print(len(json.loads(p.read_text())) if p.exists() else 0)" 2>/dev/null || echo 0)
+    else
+      N=0
+    fi
+
+- `N == 0` → skip entirely. No Telegram, no send-keys. Silent.
+- `N > 0` → one Telegram `reply`:
+  "`N learnings queued in <session-name>. Run /reflect when convenient.`"
+  Do NOT `tmux send-keys "/reflect"`. Do NOT call the `reflect` skill
+  from a sub-agent either — the Skill invocation still reaches
+  `AskUserQuestion`.
+
+Advance marker to `DONE`. Block complete; return to the main /loop
+path and resume idle waiting.
+
+### Termination / escalation
+
+- Wall-clock cap: 15 minutes for Stages 1+2 combined. At cap, write
+  `HALTED` to the marker, record remaining clean-ups to
+  `~/.claude/idle-stage/${TICK}.deferred`, Telegram-reply once with
+  the deferred list, move on. Next tick's idempotency check sees
+  `HALTED` (not `DONE`) and resumes from where it stopped.
+- If any stage raises an exception, the marker retains its
+  last-written stage value; the next tick's resume logic picks up
+  there. Repeated failure at the same stage over 3 consecutive ticks
+  → escalate to Telegram once, stop auto-resuming, operator decides.
+
+### Operational failure modes
+
+- **Follow-up false-positives**: PR-body regex may match "Deferred
+  P2s:" in prose. Mitigation: only consume bullets under a strict
+  `## Pre-PR review` heading; reject if the P2 count line reads
+  "none" / "0".
+- **Clean-up wipes in-flight work**: guarded by skipping the
+  session's own worktree (B1) and by NOT auto-fixing the main-clone-
+  on-feature-branch case (B7).
+- **Marker corruption**: 2-hour-stale override + nightly prune
+  reset the state. Worst case: one extra sweep.
+- **`/reflect` hang**: impossible by construction — we never
+  send-keys `/reflect`. Telegram notice is the only output.
