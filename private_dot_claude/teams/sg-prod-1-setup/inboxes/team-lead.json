@@ -1,0 +1,74 @@
+[
+  {
+    "from": "aws-auditor",
+    "text": "## AWS Audit Report — ap-southeast-1 (Account 442740305558)\n\n### 1. Identity\n- **User**: `bot-admin-Global-management`\n- **Account**: `442740305558`\n\n### 2. EC2 Instances\n- **None running.** Zero instances in ap-southeast-1.\n- **Instance i-037b78bd5232103a9 (vault-al2023-arm) does NOT exist** — fully terminated/deleted.\n\n### 3. VPCs\n| VPC ID | CIDR | Default | Name |\n|--------|------|---------|------|\n| vpc-0b4c0e08c64f257a2 | 172.31.0.0/16 | Yes | (none) |\n\nOnly the default VPC exists.\n\n### 4. Subnets\n| Subnet ID | AZ | CIDR |\n|-----------|-----|------|\n| subnet-021cb79acb7496858 | ap-southeast-1b | 172.31.16.0/20 |\n| subnet-092699323945160c8 | ap-southeast-1a | 172.31.32.0/20 |\n| subnet-050ceae6651a7b5c5 | ap-southeast-1c | 172.31.0.0/20 |\n\nAll default subnets (3 AZs).\n\n### 5. Security Groups\n| SG ID | Name | VPC |\n|-------|------|-----|\n| sg-0878a0b6f510523e5 | default | vpc-0b4c0e08c64f257a2 |\n\nOnly the default SG exists.\n\n### 6. S3 Buckets\n**None.** No S3 buckets in this account.\n\n### 7. RDS\n**None.** No RDS instances.\n\n### 8. EKS\n**None.** No EKS clusters.\n\n### 9. Route53 — Hosted Zones\n| Zone | ID | Records |\n|------|----|---------|\n| <your-domain>. | Z049947528RQWVBXKDTLX | 48 |\n\n**No acaps.net zone found** in this account.\n\n### 10. Route53 — Key DNS Records for sg-prod-1\n\n| Record | Type | Value |\n|--------|------|-------|\n| **<server>.<your-domain>** | **A** | **115.66.61.34** |\n| **<short-name>.<your-domain>** | **CNAME** | **<server>.<your-domain>** |\n| <traefik>.<your-domain> | A | 115.66.61.34 |\n| <registry>.<your-domain> | A | 115.66.61.34 |\n| <n8n>.<your-domain> | A | 115.66.61.34 |\n| <whoami>.<your-domain> | A | 115.66.61.34 |\n| <your-domain> (root) | A | 18.142.227.94 |\n\n**sg-prod-1 IP is 115.66.61.34** — 5 DNS records point to it (sg-prod-1, sg, traefik, docker, n8n, whoami).\n\n### Other notable DNS records:\n| Record | Type | Value | Notes |\n|--------|------|-------|-------|\n| <ai>.<your-domain> | A | 54.255.36.25 | |\n| <ca>.<your-domain> | A | 13.229.209.166 | |\n| <consul>.<your-domain> | A | 139.224.233.161 | Alibaba Cloud IP |\n| <elastic>.<your-domain> | A | 18.141.179.152 | Old services? |\n| <v>.<your-domain> | A | 13.214.115.188 | |\n| <vault>.<your-domain> | A | 54.169.236.92 | Old vault? |\n| <ts>.<your-domain> | A | 139.224.233.161 | Alibaba Cloud IP |\n| Multiple registry mirrors (gcr, ghcr, mcr, etc.) | A | 18.141.179.152 | All same IP |\n\n### 11. IAM Users\n| User | Created |\n|------|---------|\n| bot-admin-Global-management | 2025-07-29 |\n| bot-ddns-route53 | 2026-02-10 |\n\n### 12. IAM Roles\n- AWSReservedSSO_AdministratorAccess_bbfcc86e1bc757dd\n- AWSReservedSSO_PowerUserAccess_a6ae9d3f9708d6a5\n- OrganizationAccountAccessRole\n- Share-peter-<your-domain>\n- Share_DNS_AWS-CN-Production\n\n### 13. KMS Keys\n5 keys exist (IDs: 520c12dc, b8ef9b51, c466bef8, dca65161, f0ba332a)\n\n### 14. DynamoDB\n**None.**\n\n### 15. Elastic IPs / EBS Volumes / Load Balancers\n**All empty.** No EIPs, EBS volumes, or ALBs.\n\n---\n\n## Summary\n\nThe AWS account is **very clean** — essentially just:\n- Default VPC with default subnets/SG\n- Route53 zone for <your-domain> (48 records)\n- 2 IAM users (bot-admin, bot-ddns-route53)\n- 5 IAM roles (SSO + org + sharing)\n- 5 KMS keys\n- **No compute resources** (no EC2, EKS, RDS, ALBs)\n\n**Key finding: sg-prod-1 (115.66.61.34) is NOT an AWS resource** — it's an external server. The vault instance from aws-cleanup.md is fully gone.\n\n**Stale DNS concern**: Many A records (18.141.179.152 for registry mirrors, 139.224.233.161 for consul/ts, etc.) may point to defunct infrastructure that should be cleaned up.",
+    "summary": "Complete AWS audit - sg-prod-1 IP is 115.66.61.34, account is clean",
+    "timestamp": "2026-02-10T03:13:39.659Z",
+    "color": "green",
+    "read": true
+  },
+  {
+    "from": "aws-auditor",
+    "text": "{\"type\":\"idle_notification\",\"from\":\"aws-auditor\",\"timestamp\":\"2026-02-10T03:13:44.499Z\",\"idleReason\":\"available\"}",
+    "timestamp": "2026-02-10T03:13:44.499Z",
+    "color": "green",
+    "read": true
+  },
+  {
+    "from": "aws-auditor",
+    "text": "{\"type\":\"idle_notification\",\"from\":\"aws-auditor\",\"timestamp\":\"2026-02-10T03:13:52.283Z\",\"idleReason\":\"available\"}",
+    "timestamp": "2026-02-10T03:13:52.283Z",
+    "color": "green",
+    "read": true
+  },
+  {
+    "from": "server-auditor",
+    "text": "## sg-prod-1 Server Audit - Complete Findings\n\n### CRITICAL: Server is NOT reachable from the internet\n\nSSH to 115.66.61.34 fails on ALL ports tested (22, 80, 443, 2222, 6443, 8443, 51820). Ping also fails (100% packet loss). The server has a **private IP (<lan-ip>)** on its NIC and the public IP (115.66.61.34) has **no port forwarding configured** at the router/firewall level.\n\nThe only access is via **iKVM/BMC console at 10.1.1.241** (noVNC web interface on the local network).\n\n---\n\n### 1. OS &amp; System (from iKVM screenshots dated Feb 6, 2026)\n\n| Property | Value |\n|----------|-------|\n| **OS** | Ubuntu 24.04.3 LTS |\n| **Kernel** | 6.8.0-94-generic x86_64 |\n| **Hostname** | `finclab-us1` (NOT sg-prod-1 - needs renaming) |\n| **Install date** | Feb 6, 2026 |\n| **Status** | Fresh install, minimal configuration |\n| **System load** | 0.12 |\n| **Temperature** | 77.8°C |\n| **Processes** | 2486 |\n\n### 2. Hardware / Storage\n\n**Boot/OS Drive:**\n- 1x Samsung SSD 970 EVO Plus 2TB NVMe — 1.819T\n  - Partition 1: ESP (vfat) 512MB\n  - LVM VG `vgubuntu` (1.818T):\n    - `root` LV: 1.81T ext4 (0.6% used)\n    - `swap_1` LV: 976MB\n\n**Data Array (RAID 6):**\n- 6x Samsung SSD 860 EVO 4TB SATA — 3.638T each\n- Software RAID 6 as `md127` — 21.83T raw (~14.5T usable)\n- **NOT MOUNTED** after fresh install (needs manual mount/LVM setup)\n\n### 3. Network\n\n| Property | Value |\n|----------|-------|\n| **NIC** | enp68s0 |\n| **Private IPv4** | <lan-ip> |\n| **Public IP (DNS)** | 115.66.61.34 |\n| **BMC/IPMI** | 10.1.1.241 |\n| **Proxy** | None configured |\n| **All public ports** | CLOSED/FILTERED |\n\n**DNS records pointing to 115.66.61.34:**\n- `<server>.<your-domain>` (A record)\n- `<short-name>.<your-domain>` (CNAME → <server>.<your-domain>)\n- `<registry>.<your-domain>`, `<n8n>.<your-domain>`, `<traefik>.<your-domain>`, `<whoami>.<your-domain>`\n\n### 4. Users &amp; SSH\n\n| Property | Value |\n|----------|-------|\n| **User** | `peter` (created during install, has sudo) |\n| **Password** | Set during install |\n| **SSH** | OpenSSH installed, password auth enabled |\n| **SSH Keys** | NO authorized keys configured |\n\n### 5. Software Installed\n\n**NOTHING beyond base Ubuntu 24.04.** This is a completely fresh install.\n\n**NOT installed (all needed):**\n- k3s / Kubernetes\n- Docker / containerd\n- WireGuard\n- Redis\n- PostgreSQL / ClickHouse\n- MinIO\n- Traefik / Nginx / HAProxy\n- No GPU drivers (unclear if GPU hardware present)\n\n### 6. Critical Issues / Action Items\n\n1. **Server unreachable from internet** — Router/firewall port forwarding not configured. Need to configure at the colo's network level to forward at minimum SSH (22) and WireGuard (51820/UDP) to <lan-ip>\n2. **Hostname wrong** — Currently `finclab-us1`, needs to be `sg-prod-1`\n3. **RAID 6 array not mounted** — md127 (6x4TB SSDs) exists but unmounted; needs LVM setup and mount\n4. **No SSH keys** — Only password auth; need to deploy keys\n5. **Everything needs installing** — k3s, Docker, WireGuard, all platform services\n6. **25 pending security updates** — Need apt upgrade\n7. **No firewall configured** — ufw/iptables not set up\n\n### Route53 Hosted Zone Summary\n\nFound zone `<your-domain>` (Z049947528RQWVBXKDTLX). Key records:\n- `<your-domain>` → 18.142.227.94 (AWS)\n- `<ai>.<your-domain>` → 54.255.36.25\n- `<k8s>.<your-domain>` → 18.141.179.152\n- `<vault>.<your-domain>` → 54.169.236.92\n- Multiple records point to 18.141.179.152 (likely old k8s cluster)\n- acaps.net zone not in this AWS account\n\n### Bottom Line\n\nThe server is a **freshly reinstalled bare metal box** with substantial hardware (2TB NVMe boot + 6x4TB SSD RAID 6 data array) but is currently **a blank slate**. The #1 blocker is **network accessibility** — port forwarding must be configured at the router/firewall before any remote provisioning can begin. Until then, all configuration must happen via the iKVM console at 10.1.1.241.\n",
+    "summary": "Complete sg-prod-1 server audit results",
+    "timestamp": "2026-02-10T03:20:18.826Z",
+    "color": "blue",
+    "read": true
+  },
+  {
+    "from": "server-auditor",
+    "text": "{\"type\":\"idle_notification\",\"from\":\"server-auditor\",\"timestamp\":\"2026-02-10T03:20:26.458Z\",\"idleReason\":\"available\"}",
+    "timestamp": "2026-02-10T03:20:26.458Z",
+    "color": "blue",
+    "read": true
+  },
+  {
+    "from": "server-auditor",
+    "text": "The server audit is already complete - I sent you the full report a moment ago. Task #1 is marked completed.\n\nQuick summary: The server at 115.66.61.34 (<server>.<your-domain>) is **completely unreachable from the internet** - all ports closed, ping fails. From iKVM screenshots (reinstall on Feb 6), I confirmed it's a freshly installed Ubuntu 24.04.3 LTS box with hostname `finclab-us1`, private IP <lan-ip> on enp68s0, 2TB NVMe boot + 6x4TB SSD RAID 6 array, and nothing installed beyond base Ubuntu. The #1 blocker is port forwarding at the router/firewall level. Full details are in my earlier message.",
+    "summary": "Audit already completed, results sent earlier",
+    "timestamp": "2026-02-10T03:20:35.053Z",
+    "color": "blue",
+    "read": true
+  },
+  {
+    "from": "server-auditor",
+    "text": "{\"type\":\"idle_notification\",\"from\":\"server-auditor\",\"timestamp\":\"2026-02-10T03:20:40.906Z\",\"idleReason\":\"available\"}",
+    "timestamp": "2026-02-10T03:20:40.906Z",
+    "color": "blue",
+    "read": true
+  },
+  {
+    "from": "team-lead",
+    "text": "{\"type\":\"task_assignment\",\"taskId\":\"3\",\"subject\":\"Create prioritized setup plan for sg-prod-1 and AWS\",\"description\":\"Based on findings from tasks 1 and 2, plus the architecture docs (infra/docs/), create a prioritized, tiered plan for setting up sg-prod-1 and AWS services. Follow the bootstrap sequence from docs/operations/18-bootstrap-sequence.md. Output as a concrete task list in todo/ format with tiers.\",\"assignedBy\":\"team-lead\",\"timestamp\":\"2026-02-10T03:22:48.497Z\"}",
+    "timestamp": "2026-02-10T03:22:48.497Z",
+    "read": true
+  },
+  {
+    "from": "aws-auditor",
+    "text": "{\"type\":\"shutdown_approved\",\"requestId\":\"shutdown-1770693790540@aws-auditor\",\"from\":\"aws-auditor\",\"timestamp\":\"2026-02-10T03:23:14.508Z\",\"paneId\":\"%29\",\"backendType\":\"tmux\"}",
+    "timestamp": "2026-02-10T03:23:14.508Z",
+    "color": "green",
+    "read": true
+  },
+  {
+    "from": "server-auditor",
+    "text": "{\"type\":\"shutdown_approved\",\"requestId\":\"shutdown-1770693790034@server-auditor\",\"from\":\"server-auditor\",\"timestamp\":\"2026-02-10T03:23:17.273Z\",\"paneId\":\"%28\",\"backendType\":\"tmux\"}",
+    "timestamp": "2026-02-10T03:23:17.273Z",
+    "color": "blue",
+    "read": true
+  }
+]

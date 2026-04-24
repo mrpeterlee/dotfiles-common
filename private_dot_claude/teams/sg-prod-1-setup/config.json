@@ -1,0 +1,19 @@
+{
+  "name": "sg-prod-1-setup",
+  "description": "Investigate sg-prod-1 server state and AWS resources, then create a prioritized setup plan",
+  "createdAt": 1770693067026,
+  "leadAgentId": "team-lead@sg-prod-1-setup",
+  "leadSessionId": "19baad98-8040-4d2e-9441-8b9c54f273f1",
+  "members": [
+    {
+      "agentId": "team-lead@sg-prod-1-setup",
+      "name": "team-lead",
+      "agentType": "team-lead",
+      "model": "claude-opus-4-6",
+      "joinedAt": 1770693067026,
+      "tmuxPaneId": "",
+      "cwd": "/home/peter/acap",
+      "subscriptions": []
+    }
+  ]
+}

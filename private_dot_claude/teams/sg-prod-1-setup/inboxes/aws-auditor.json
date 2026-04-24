@@ -1,0 +1,21 @@
+[
+  {
+    "from": "team-lead",
+    "text": "You are an AWS audit agent on team \"sg-prod-1-setup\". Your task is #2: \"Audit AWS resources in ap-southeast-1\".\n\nAWS credentials are already configured (check `aws sts get-caller-identity`). Region is ap-southeast-1. Account is 442740305558.\n\nRun these AWS CLI commands to audit the current state:\n\n1. **Identity**: `aws sts get-caller-identity`\n2. **EC2**: `aws ec2 describe-instances --query 'Reservations[].Instances[].{ID:InstanceId,Type:InstanceType,State:State.Name,Name:Tags[?Key==\\`Name\\`].Value|[0],IP:PublicIpAddress,PrivateIP:PrivateIpAddress}' --output table`\n3. **VPCs**: `aws ec2 describe-vpcs --query 'Vpcs[].{ID:VpcId,CIDR:CidrBlock,Default:IsDefault,Name:Tags[?Key==\\`Name\\`].Value|[0]}' --output table`\n4. **Subnets**: `aws ec2 describe-subnets --query 'Subnets[].{ID:SubnetId,VPC:VpcId,AZ:AvailabilityZone,CIDR:CidrBlock}' --output table`\n5. **Security Groups**: `aws ec2 describe-security-groups --query 'SecurityGroups[].{ID:GroupId,Name:GroupName,VPC:VpcId}' --output table`\n6. **S3**: `aws s3 ls`\n7. **RDS**: `aws rds describe-db-instances --query 'DBInstances[].{ID:DBInstanceIdentifier,Engine:Engine,Status:DBInstanceStatus,Class:DBInstanceClass}' --output table 2>/dev/null || echo \"No RDS instances\"`\n8. **EKS**: `aws eks list-clusters --output table 2>/dev/null || echo \"No EKS clusters\"`\n9. **Route53**: `aws route53 list-hosted-zones --query 'HostedZones[].{Name:Name,ID:Id,Records:ResourceRecordSetCount}' --output table`\n10. **IAM Users**: `aws iam list-users --query 'Users[].{Name:UserName,Created:CreateDate}' --output table`\n11. **IAM Roles**: `aws iam list-roles --query 'Roles[?starts_with(RoleName,\\`acap\\`) || starts_with(RoleName,\\`AWSServiceRole\\`)==\\`false\\`].{Name:RoleName}' --output table 2>/dev/null`\n12. **KMS**: `aws kms list-keys --query 'Keys[].KeyId' --output table 2>/dev/null || echo \"No KMS keys\"`\n13. **DynamoDB**: `aws dynamodb list-tables --output table 2>/dev/null || echo \"No DynamoDB tables\"`\n14. **Elastic IPs**: `aws ec2 describe-addresses --query 'Addresses[].{IP:PublicIp,Instance:InstanceId,Name:Tags[?Key==\\`Name\\`].Value|[0]}' --output table`\n15. **EBS Volumes**: `aws ec2 describe-volumes --query 'Volumes[].{ID:VolumeId,Size:Size,State:State,AZ:AvailabilityZone,Type:VolumeType}' --output table`\n16. **Load Balancers**: `aws elbv2 describe-load-balancers --query 'LoadBalancers[].{Name:LoadBalancerName,DNS:DNSName,Type:Type}' --output table 2>/dev/null || echo \"No ALBs\"`\n\nAlso check if the EC2 instance i-037b78bd5232103a9 (vault-al2023-arm) from aws-cleanup.md still exists.\n\nAlso look up any Route53 records for <your-domain> and acaps.net to find the sg-prod-1 IP:\n`aws route53 list-resource-record-sets --hosted-zone-id <zone-id> --query 'ResourceRecordSets[].{Name:Name,Type:Type,Value:ResourceRecords[0].Value}' --output table`\n\nReport ALL findings. Mark task #2 as completed when done via TaskUpdate.",
+    "timestamp": "2026-02-10T03:11:57.771Z",
+    "read": true
+  },
+  {
+    "from": "aws-auditor",
+    "text": "{\"type\":\"task_assignment\",\"taskId\":\"2\",\"subject\":\"Audit AWS resources in ap-southeast-1\",\"description\":\"Check current AWS state: EC2 instances, VPCs, S3 buckets, RDS instances, EKS clusters, Route53 hosted zones, IAM users/roles, security groups, KMS keys, DynamoDB tables. Compare against what docs say should exist and what aws-cleanup.md says should be deleted. Report findings.\",\"assignedBy\":\"aws-auditor\",\"timestamp\":\"2026-02-10T03:12:03.391Z\"}",
+    "timestamp": "2026-02-10T03:12:03.391Z",
+    "color": "green",
+    "read": true
+  },
+  {
+    "from": "team-lead",
+    "text": "{\"type\":\"shutdown_request\",\"requestId\":\"shutdown-1770693790540@aws-auditor\",\"from\":\"team-lead\",\"reason\":\"Audit complete, shutting down. Thanks!\",\"timestamp\":\"2026-02-10T03:23:10.540Z\"}",
+    "timestamp": "2026-02-10T03:23:10.540Z",
+    "read": true
+  }
+]
