@@ -1000,8 +1000,10 @@ follow-up work in-band, only clean-ups.
         # gh's -q uses gojq/RE2; no `(?!...)` lookahead, no `s`
         # flag (codex round-7 P1). Split into two positive tests,
         # AND the negation of the "none" case. `i` flag is OK.
+        # --limit 200 avoids the default-30 cap (codex round-9
+        # P2) — active repos exceed 30 merges in 7 days.
         gh pr list --state merged --author @me -R "$owner_repo" \
-          --search "merged:>=$since" \
+          --search "merged:>=$since" --limit 200 \
           --json number,body \
           -q '.[]
               | select(.body | test("Deferred P2s:"; "i"))
@@ -1019,18 +1021,23 @@ follow-up work in-band, only clean-ups.
   fresh `TaskCreate` each sweep and effectively re-opens
   follow-up work §1 said should stay closed once completed.
 
-  Before creating tasks for a PR, check a per-PR sentinel:
+  **Sentinel path is OUTSIDE the tick-pruned session dir** —
+  `~/.claude/idle-stage/${SESSION}/` is nightly-pruned at
+  mtime > 2 days, which is less than A1's 7-day window, so
+  sentinels placed there would evaporate on day 3 and A1 would
+  re-harvest the same PR's P2s on days 3-7 (codex round-9 P2).
+  Use a sibling directory with a 14-day prune budget:
 
-      HARVEST=~/.claude/idle-stage/${SESSION}/harvested
+      HARVEST=~/.claude/idle-harvested/${SESSION}
       mkdir -p "$HARVEST"
       sentinel="$HARVEST/${owner_repo//\//-}-${pr_number}.done"
       [ -f "$sentinel" ] && continue   # already harvested
 
   After successfully emitting all `TaskCreate` entries for that
-  PR's P2 bullets, `touch "$sentinel"`. The sentinel directory
-  is nightly-pruned with mtime > 14d so any PR reopened beyond
-  that window will re-harvest (acceptable: a reopened PR is
-  new work).
+  PR's P2 bullets, `touch "$sentinel"`. `~/.claude/idle-harvested/`
+  is nightly-pruned with mtime > 14d (separate from idle-stage's
+  2-day prune) — any PR reopened beyond that window re-harvests
+  (acceptable: a reopened PR is new work).
 
 - **A2 — Note.** Idleness already requires `TaskList` to be empty,
   so there is nothing to "find" here at DISCOVER time. If an
@@ -1094,26 +1101,36 @@ follow-up work in-band, only clean-ups.
   against "merged by someone, then cherry-picked further".
 
       SESSION=$(basename "$PWD")
+      SELF="$PWD"
       for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
         since=$(date -u -d '60 days ago' +%Y-%m-%d)
+        # --limit 200 caps the page; gh defaults to 30 which
+        # is insufficient for active repos (acap has >30 merges
+        # in a 60-day window, codex round-9 P2). If even 200 is
+        # too low, re-paginate with --json mergedAt and widen
+        # the lower bound on subsequent calls.
         merged_branches=$(gh pr list --state merged --author @me \
           -R "$owner_repo" --search "merged:>=$since" \
-          --json headRefName -q '.[].headRefName')
+          --limit 200 --json headRefName -q '.[].headRefName')
         git -C "$wt_repo" worktree list --porcelain 2>/dev/null \
           | awk -v s="$SESSION" '
               /^worktree / { wt=$2 }
               /^branch /   { if (wt ~ s) printf "%s\t%s\n",
                                wt, substr($2, 12) }' \
           | while IFS=$'\t' read -r wt_path branch; do
+              # Skip the live session worktree itself — even
+              # after merge, tearing down $PWD pulls the rug
+              # out from under the running pane (codex round-9
+              # P1). Explicit guard here, not just in prose.
+              [ "$wt_path" = "$SELF" ] && continue
               printf '%s\n' "$merged_branches" \
                 | grep -Fxq "$branch" || continue
               ahead=$(git -C "$wt_path" rev-list --count \
                 "origin/main..HEAD" 2>/dev/null || echo 1)
               [ "$ahead" = "0" ] || continue
-              # Enqueue <wt-path> <branch> for EXECUTE.
               echo "$wt_path"$'\t'"$branch"
             done
       done
@@ -1149,17 +1166,27 @@ follow-up work in-band, only clean-ups.
   `CronDelete` target.
 
   **Repo-less cron handling.** If the cron prompt does NOT name
-  `-R <repo>` (pre-dates the §5 rule that requires `-R`), fall
-  back to `gh pr view <n> --json state` in the current working
-  tree. If that 404s, the cron references a PR this repo doesn't
-  have — record it to the EXECUTE queue as a `CronDelete` target
-  anyway. Rationale: such a cron will 404 every tick forever,
-  and it counts as a minute-level polling cron per idleness
-  condition #3, so leaving it in place makes the session
-  permanently non-idle (codex round-5 P1). The 2-hour stale-
-  marker sweep retires idle-stage files, not `CronList` rows,
-  so without active removal the orphan cron survives
-  indefinitely.
+  `-R <repo>` (pre-dates the §5 rule that requires `-R`):
+
+  1. Try `gh pr view <n> --json state` in the current working
+     tree.
+  2. If it returns MERGED/CLOSED → enqueue `CronDelete`.
+  3. If it 404s in the CURRENT repo, fall back to a broader
+     probe: query every session-owned repo (`~/acap`, `~/alpha`,
+     `~/.files`, `~/tapai`) with `gh pr view <n> -R
+     <owner/repo>`. If ANY repo returns `OPEN`, the cron is
+     watching a live PR elsewhere — DO NOT delete it. If ALL
+     repos return 404 or the PR is MERGED/CLOSED, enqueue
+     `CronDelete`.
+
+  A CWD-only 404 does NOT prove the cron is stale — it could
+  be polling an open PR in another repo, and blindly deleting
+  it would silently stop the only merge watcher for that PR
+  (codex round-9 P1). Rationale for eventual deletion: an
+  all-404 cron references a PR no session-owned repo has; it
+  will 404 every tick forever, lock idleness via condition #3,
+  and the 2-hour idle-stage sweep retires markers, not
+  `CronList` rows.
 
 - **B7 — Main clone has a feature branch checked out.**
 
@@ -1264,11 +1291,28 @@ and let them run `/reflect` out-of-band.
     fi
 
 - `N == 0` → skip entirely. No Telegram, no send-keys. Silent.
-- `N > 0` → one Telegram `reply`:
-  "`N learnings queued in <session-name>. Run /reflect when convenient.`"
-  Do NOT `tmux send-keys "/reflect"`. Do NOT call the `reflect` skill
-  from a sub-agent either — the Skill invocation still reaches
-  `AskUserQuestion`.
+- `N > 0` → check a rate-limit sentinel before notifying. Without
+  it, the tick-keyed marker only suppresses duplicate
+  within-the-same-half-hour notifications, so every successive
+  idle tick (every 30 min) would Telegram-spam the operator until
+  they run `/reflect` out-of-band (codex round-9 P3):
+
+      NUDGE=~/.claude/idle-harvested/${SESSION}/reflect-nudge
+      # Nudge at most once per 6 hours
+      if [ ! -f "$NUDGE" ] || \
+         [ $(( $(date +%s) - $(stat -c %Y "$NUDGE") )) -ge 21600 ]; then
+        # Send the Telegram reply:
+        #   "N learnings queued in <session-name>.
+        #    Run /reflect when convenient."
+        touch "$NUDGE"
+      fi
+
+  Do NOT `tmux send-keys "/reflect"`. Do NOT call the `reflect`
+  skill from a sub-agent either — the Skill invocation still
+  reaches `AskUserQuestion`. Reset the nudge sentinel when the
+  queue drops back to 0 (on the NEXT `N==0` tick,
+  `rm -f "$NUDGE"`), so a fresh queue after a processed one gets
+  a fresh nudge within minutes instead of waiting 6 hours.
 
 Advance marker to `DONE`. Block complete; return to the main /loop
 path and resume idle waiting.
