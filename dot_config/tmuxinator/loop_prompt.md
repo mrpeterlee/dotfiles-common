@@ -840,7 +840,7 @@ continues to own the main clone; you own your worktree.
 Every cron tick, AFTER §0 (MCP guard) and §1 (sweep) produce an empty
 result AND no §4a/§4b/§5 flow is in progress, the session is **idle**.
 Before picking up any new operator-driven task, run this block as a
-three-stage state machine — DISCOVER → EXECUTE → NOTIFY.
+two-stage state machine — DISCOVER → EXECUTE.
 
 Staging is load-bearing: discovery never executes in-band. Follow-ups
 that produce PR-worthy work become `TaskCreate` entries that the NEXT
@@ -925,7 +925,7 @@ another's entire tick a no-op. The session subdir is mkdir-p'd
 before first write.
 
 Marker **content** is the current stage
-(`DISCOVER|EXECUTE|NOTIFY|DONE|HALTED-<stage>`). File presence
+(`DISCOVER|EXECUTE|DONE|HALTED-<stage>`). File presence
 means the block has begun on this tick; content means where it is.
 
 **Before writing `$MARKER`**, scan the session's full history for
@@ -939,7 +939,7 @@ an unfinished run from a prior tick and finish it first:
           state=$(cat "$mf" 2>/dev/null)
           case "$state" in
             DONE|"") : ;;
-            HALTED-*|DISCOVER|EXECUTE|NOTIFY)
+            HALTED-*|DISCOVER|EXECUTE)
               echo "resume $mf state=$state"
               ;;
           esac
@@ -956,7 +956,7 @@ abandoned. (Codex round-4 P1.)
 For the current tick's marker, interpret its content:
 
 - `DONE` → skip the block entirely; the tick has been serviced.
-- `DISCOVER|EXECUTE|NOTIFY` → resume from that stage (prior
+- `DISCOVER|EXECUTE` → resume from that stage (prior
   execution aborted; pick up where it left off). The stage handlers
   are idempotent.
 - `HALTED-<stage>` → resume from `<stage>` (the 15-min cap wrote
@@ -1282,54 +1282,6 @@ MEMORY.md gotcha), update the doc in-band **only if** the change
 is a deletion or a dated-audit-note append. Anything larger →
 `TaskCreate` tag `doc-update,needs-pr` for the next cycle.
 
-Advance marker to `NOTIFY`.
-
-### Stage 3 — NOTIFY (`/reflect` queue awareness, not invocation)
-
-`/reflect` is **inherently interactive** — it raises
-`AskUserQuestion` on every non-empty queue and has no
-`--auto-approve` mode. A blind `tmux send-keys "/reflect" Enter` in
-a cron-driven session with items in the queue WILL hang the pane at
-the first prompt; the subsequent cron tick cannot fire. Do NOT model
-`/reflect` on `/mcp reconnect` (§0).
-
-Pre-check the queue; if non-empty, notify the operator via Telegram
-and let them run `/reflect` out-of-band.
-
-    ENC=$(pwd | sed 's|/|-|g')
-    QF="$HOME/.claude/projects/${ENC}/learnings-queue.json"
-    if [ -f "$QF" ]; then
-      N=$(python3 -c "import json,pathlib; p=pathlib.Path('$QF'); print(len(json.loads(p.read_text())) if p.exists() else 0)" 2>/dev/null || echo 0)
-    else
-      N=0
-    fi
-
-- `N == 0` → skip entirely. No Telegram, no send-keys. Silent.
-- `N > 0` → check a rate-limit sentinel before notifying. Without
-  it, the tick-keyed marker only suppresses duplicate
-  within-the-same-half-hour notifications, so every successive
-  idle tick (every 30 min) would Telegram-spam the operator until
-  they run `/reflect` out-of-band (codex round-9 P3):
-
-      NUDGE_DIR=~/.claude/idle-harvested/${SESSION}
-      NUDGE="$NUDGE_DIR/reflect-nudge"
-      mkdir -p "$NUDGE_DIR"    # A1 may never have created it
-      # Nudge at most once per 6 hours
-      if [ ! -f "$NUDGE" ] || \
-         [ $(( $(date +%s) - $(stat -c %Y "$NUDGE") )) -ge 21600 ]; then
-        # Send the Telegram reply:
-        #   "N learnings queued in <session-name>.
-        #    Run /reflect when convenient."
-        touch "$NUDGE"
-      fi
-
-  Do NOT `tmux send-keys "/reflect"`. Do NOT call the `reflect`
-  skill from a sub-agent either — the Skill invocation still
-  reaches `AskUserQuestion`. Reset the nudge sentinel when the
-  queue drops back to 0 (on the NEXT `N==0` tick,
-  `rm -f "$NUDGE"`), so a fresh queue after a processed one gets
-  a fresh nudge within minutes instead of waiting 6 hours.
-
 Advance marker to `DONE`. Block complete; return to the main /loop
 path and resume idle waiting.
 
@@ -1337,7 +1289,7 @@ path and resume idle waiting.
 
 - Wall-clock cap: 15 minutes for Stages 1+2 combined. At cap, write
   `HALTED-<stage>` to the marker (where `<stage>` is the stage
-  currently in progress — DISCOVER, EXECUTE, or NOTIFY), record
+  currently in progress — DISCOVER or EXECUTE), record
   remaining clean-ups to
   `~/.claude/idle-stage/${SESSION}/${TICK}.deferred`, Telegram-reply
   once with the deferred list, move on. The `-<stage>` suffix
@@ -1361,5 +1313,3 @@ path and resume idle waiting.
   on-feature-branch case (B7).
 - **Marker corruption**: 2-hour-stale override + nightly prune
   reset the state. Worst case: one extra sweep.
-- **`/reflect` hang**: impossible by construction — we never
-  send-keys `/reflect`. Telegram notice is the only output.
