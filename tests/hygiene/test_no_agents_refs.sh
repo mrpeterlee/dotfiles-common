@@ -28,6 +28,7 @@ exclude=(
   ':!README.md'
   ':!.claude/CLAUDE.md'
   ':!.git/**'
+  ':!dot_codex/skills/dot_system/plugin-creator/**'
 )
 
 bad=0
