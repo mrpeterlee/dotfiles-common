@@ -51,6 +51,9 @@ _install_claude() {
             local name
             name=$(basename "$entry")
             if [[ -d "$entry" ]]; then
+                # rm-then-cp avoids the nested-dir bug where re-running cp -r src dst/
+                # creates dst/src/src when dst already contains src
+                rm -rf "$dst/$dir/$name"
                 cp -r "$entry" "$dst/$dir/$name"
             elif [[ -f "$entry" ]]; then
                 mkdir -p "$dst/$dir"
@@ -138,7 +141,13 @@ _install_codex() {
     mkdir -p "$dst" "$dst/prompts"
 
     # Top-level files (strip private_ prefix for chezmoi naming)
-    [[ -f "$src/private_config.toml" ]] && copy_force "$src/private_config.toml" "$dst/config.toml" "config.toml"
+    # config.toml is now a chezmoi template (private_config.toml.tmpl) — copy-mode
+    # cannot render the {{ .chezmoi.* }} substitutions. Skip with a warning so the
+    # operator knows codex needs chezmoi for full setup.
+    if [[ -f "$src/private_config.toml.tmpl" ]]; then
+        warn "  codex config.toml requires chezmoi templating — skipping in copy mode"
+        warn "  (run \"chezmoi apply\" or \"./cli apply\" for full codex config)"
+    fi
     [[ -f "$src/AGENTS.md" ]] && copy_force "$src/AGENTS.md" "$dst/AGENTS.md" "AGENTS.md"
 
     # Prompts
@@ -167,7 +176,7 @@ _install_codex() {
 
 _install_opencode() {
     info "Installing OpenCode config..."
-    local src="$SCRIPT_DIR/dot_opencode"
+    local src="$SCRIPT_DIR/dot_config/opencode"
     local dst="${AGENT_DIRS[opencode]}"
 
     mkdir -p "$dst"
