@@ -834,3 +834,532 @@ local commits survive only in the reflog — confusing, and easy to
 miss. Worktrees are independent directories with their own HEAD, so
 resets on the main clone do not affect them. The deploy pipeline
 continues to own the main clone; you own your worktree.
+
+## 7. Idle-time maintenance — before picking up new tasks
+
+Every cron tick, AFTER §0 (MCP guard) and §1 (sweep) produce an empty
+result AND no §4a/§4b/§5 flow is in progress, the session is **idle**.
+Before picking up any new operator-driven task, run this block as a
+three-stage state machine — DISCOVER → EXECUTE → NOTIFY.
+
+Staging is load-bearing: discovery never executes in-band. Follow-ups
+that produce PR-worthy work become `TaskCreate` entries that the NEXT
+tick's §1 sweep drains. This structurally prevents the "idle spawns
+follow-up spawns more follow-ups, idle never idle again" infinite
+loop.
+
+### Idleness definition (all four must hold)
+
+1. `TaskList` returns no entries.
+2. **No open PR from THIS session.** Account-wide
+   `gh search prs --author @me --state open` is wrong — a sister
+   session's PR in a different repo would block this pane forever.
+   Scope to this session's own branches only:
+
+       # Enumerate (repo, branch) pairs for every worktree this
+       # session owns. Emit "<repo-dir>\t<branch>" per line so the
+       # follow-up gh call can pass -R correctly — passing just
+       # the branch and running `gh pr list --head <branch>` in
+       # $PWD would miss a session-owned branch in a different
+       # repo (codex round-2 P1).
+       for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+         [ -d "$wt_repo" ] || continue
+         git -C "$wt_repo" worktree list --porcelain 2>/dev/null \
+           | awk -v s="$(basename "$PWD")" -v repo="$wt_repo" '
+               /^worktree / { wt=$2 }
+               /^branch /   { if (wt ~ s) printf "%s\t%s\n",
+                               repo, substr($2, 12) }'
+       done
+
+   For each `<repo-dir>\t<branch>` pair, derive the `<owner>/<repo>`
+   remote and call — note: `gh pr list` has no `repository` JSON
+   field (only `headRepository`), so asking for it errors out and
+   crashes the idleness gate (codex round-6 P1); `-R` already
+   supplies the repo context anyway:
+
+       owner_repo=$(git -C "<repo-dir>" remote get-url origin \
+         | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+       gh pr list --head "<branch>" -R "$owner_repo" \
+         --state open --json number --limit 1
+
+   If ALL pairs return `[]`, this session has no open PR. Sister
+   sessions' PRs are irrelevant — their polling crons live in
+   their own Claude sessions, not ours.
+3. `CronList` has no entries whose prompt matches
+   `pr-codex-watch|PR #[0-9]+|/loop 1m|Poll .* PR`  — i.e., no
+   minute-level polling loops active in THIS session.
+4. No verification artefacts pending. Idleness REQUIRES all of:
+   - `${TELEGRAM_STATE_DIR}/mcp-reconnect.count` is missing OR its
+     integer value is `0` (non-zero means §0 is mid-reconnect).
+   - No `.claude/pre-pr/<head-sha>/verdict.json` exists with
+     `"verdict": "in_progress"` (in-progress means §4b is still
+     running on the current branch).
+
+   If EITHER artefact indicates pending work, the session is NOT
+   idle — do not run §7. Bullet 4 was inverted on round-1; the
+   presence of those signals means work is in flight, not that
+   we're done.
+
+### Idempotency marker
+
+Compute the tick identifier as the most recent 30-minute cron
+boundary floor (the session fires at :00 and :30 per /loop). DO NOT
+preserve the current minute — that would produce a different marker
+on every retry within the same cron window and break the "skip if
+already serviced" guarantee:
+
+    min=$(date -u +%M)
+    floor=$(( min < 30 ? 0 : 30 ))
+    TICK=$(printf '%sT%s%02d' \
+             "$(date -u +%Y%m%d)" \
+             "$(date -u +%H)" \
+             "$floor")
+    SESSION=$(basename "$PWD")      # worktree name = session name
+    MARKER=~/.claude/idle-stage/${SESSION}/${TICK}
+
+**Namespace the marker by session.** All Claude panes on the host
+share `~/.claude/idle-stage/`; without the `${SESSION}/` subdir,
+sister sessions (`acap_cc_1..4`, `alpha_cc_*`, `tapai_cc_*`) would
+race on the same marker file — one session's `DONE` would make
+another's entire tick a no-op. The session subdir is mkdir-p'd
+before first write.
+
+Marker **content** is the current stage
+(`DISCOVER|EXECUTE|NOTIFY|DONE|HALTED-<stage>`). File presence
+means the block has begun on this tick; content means where it is.
+
+**Before writing `$MARKER`**, scan the session's full history for
+an unfinished run from a prior tick and finish it first:
+
+    # Any marker in this session's dir with non-DONE content from
+    # the last 2 hours is pending resumption.
+    find ~/.claude/idle-stage/"${SESSION}" -maxdepth 1 -type f \
+        -mmin -120 2>/dev/null \
+      | while read -r mf; do
+          state=$(cat "$mf" 2>/dev/null)
+          case "$state" in
+            DONE|"") : ;;
+            HALTED-*|DISCOVER|EXECUTE|NOTIFY)
+              echo "resume $mf state=$state"
+              ;;
+          esac
+        done
+
+If any pending marker is found, resume THAT marker's tick first —
+do NOT start a new one for the current TICK until the unfinished
+one reaches `DONE` or is retired at the 2-hour stale boundary.
+Without this scan, a timeout on the previous tick writes
+`HALTED-EXECUTE` to `…/T1000`, the next cron fires with `TICK=T1030`
+and creates a fresh marker; the prior `.deferred` EXECUTE queue is
+abandoned. (Codex round-4 P1.)
+
+For the current tick's marker, interpret its content:
+
+- `DONE` → skip the block entirely; the tick has been serviced.
+- `DISCOVER|EXECUTE|NOTIFY` → resume from that stage (prior
+  execution aborted; pick up where it left off). The stage handlers
+  are idempotent.
+- `HALTED-<stage>` → resume from `<stage>` (the 15-min cap wrote
+  this; `<stage>` preserves the information the naive `HALTED`
+  marker would have erased). Re-load the EXECUTE queue from
+  `.deferred` if present. After resume, re-check the wall-clock
+  budget; the second-attempt cap resets fresh.
+- Marker older than 2 hours without `DONE` → treat as stale and
+  restart from `DISCOVER`.
+
+`~/.claude/idle-stage/${SESSION}/` is nightly-pruned by the
+tmuxinator bootstrap (`find ... -mtime +2 -delete`).
+
+### Stage 1 — DISCOVER
+
+Walk this minimum row set (the starred rows from the design research
+— the seven where doing nothing causes visible harm). Every row
+emits either an in-band action or a `TaskCreate`; do NOT execute
+follow-up work in-band, only clean-ups.
+
+**Follow-ups (HIGH priority, operator-visible):**
+
+- **A1 — Deferred P2s in merged PR bodies (last 7 days).**
+
+  Per-repo query — `gh pr list` without `-R` scopes to CWD only
+  and would miss merged PRs in other session-owned repos
+  (codex round-4 P2). Iterate the session-owned repo list:
+
+      for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$wt_repo" ] || continue
+        owner_repo=$(git -C "$wt_repo" remote get-url origin \
+          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        # `gh pr list --search "merged:>=..."` is server-side
+        # filtered so the result isn't truncated before the
+        # 7-day gate (codex round-5 P2). Use gh pr list rather
+        # than `gh search prs` because gh pr list exposes the
+        # fields we need (body, number) and `gh search prs`
+        # has a different --json schema without `headRefName`
+        # / `body` consistency (codex round-6 P2).
+        since=$(date -u -d '7 days ago' +%Y-%m-%d)
+        # gh's -q uses gojq/RE2; no `(?!...)` lookahead, no `s`
+        # flag (codex round-7 P1). Split into two positive tests,
+        # AND the negation of the "none" case. `i` flag is OK.
+        # --limit 200 avoids the default-30 cap (codex round-9
+        # P2) — active repos exceed 30 merges in 7 days.
+        gh pr list --state merged --author @me -R "$owner_repo" \
+          --search "merged:>=$since" --limit 200 \
+          --json number,body \
+          -q '.[]
+              | select(.body | test("Deferred P2s:"; "i"))
+              | select(.body | test("Deferred P2s: *none"; "i") | not)'
+      done
+
+  For each PR, parse the `## Pre-PR review` block; for each P2
+  bullet, `TaskCreate` with tag `follow-up,pr-<n>,deferred-p2` and
+  body `{repo, pr, finding, file:line if present}`.
+
+  **Dedupe across idle sweeps (codex round-8 P2).** A1 re-runs
+  on every idle tick, and the 7-day window means a PR with
+  deferred P2s gets re-scanned every ~6 hours until it falls out
+  of the window. Without a dedupe check, the same P2 becomes a
+  fresh `TaskCreate` each sweep and effectively re-opens
+  follow-up work §1 said should stay closed once completed.
+
+  **Sentinel path is OUTSIDE the tick-pruned session dir** —
+  `~/.claude/idle-stage/${SESSION}/` is nightly-pruned at
+  mtime > 2 days, which is less than A1's 7-day window, so
+  sentinels placed there would evaporate on day 3 and A1 would
+  re-harvest the same PR's P2s on days 3-7 (codex round-9 P2).
+  Use a sibling directory with a 14-day prune budget:
+
+      HARVEST=~/.claude/idle-harvested/${SESSION}
+      mkdir -p "$HARVEST"
+      sentinel="$HARVEST/${owner_repo//\//-}-${pr_number}.done"
+      [ -f "$sentinel" ] && continue   # already harvested
+
+  After successfully emitting all `TaskCreate` entries for that
+  PR's P2 bullets, `touch "$sentinel"`. `~/.claude/idle-harvested/`
+  is nightly-pruned with mtime > 14d (separate from idle-stage's
+  2-day prune) — any PR reopened beyond that window re-harvests
+  (acceptable: a reopened PR is new work).
+
+- **A2 — Note.** Idleness already requires `TaskList` to be empty,
+  so there is nothing to "find" here at DISCOVER time. If an
+  earlier row in THIS same pass (A1) emits a `TaskCreate`, DO NOT
+  treat its presence as a short-circuit signal for later rows
+  (A4, A7) — every row runs to completion and emits its own
+  `TaskCreate` entries independently. A2 is kept in the row
+  numbering for taxonomic completeness; no DISCOVER action.
+
+- **A4 — Draft PRs from @me (likely §4b FAIL survivors).**
+
+  Same per-repo loop as A1:
+
+      for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$wt_repo" ] || continue
+        owner_repo=$(git -C "$wt_repo" remote get-url origin \
+          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        # gh pr list has no `repository` JSON field (codex
+        # round-6 P2) — -R already supplies the repo. Drop it.
+        gh pr list --author @me --state open --draft \
+          -R "$owner_repo" \
+          --json number,title,body,updatedAt \
+          -q '.[]
+              | select(.body | test("Pre-PR (behavioural gate|review)"; "i"))
+              | select(.body | test("FAIL|bypassed|skipped"; "i"))
+              | select((.updatedAt | fromdateiso8601) < (now - 7200))'
+      done
+
+  (Only drafts older than 2h, to avoid racing an in-flight §4b
+  fail-and-retry.) For each, `TaskCreate` with tag
+  `follow-up,draft-pr,<n>` and body "re-run §4b gate; ready or
+  escalate".
+
+- **A7 — Chezmoi drift this session caused.**
+
+      chezmoi status 2>/dev/null | awk '$1 == "M" || $1 == "A"'
+
+  Non-empty → inspect diff; if target is correct, `TaskCreate` tag
+  `follow-up,chezmoi-apply`; if source needs update, `TaskCreate`
+  tag `follow-up,chezmoi-readd`. Do not auto-apply/readd in-band —
+  another session may be the legitimate author.
+
+**Clean-ups (safe + idempotent, executed IN-BAND in Stage 2):**
+
+- **B1 — Worktrees whose branch is merged.**
+
+  **Session-scoped from the start** — iterate only worktrees whose
+  path contains this session's name. A tree belonging to a sister
+  session must NEVER enter this queue (codex round-7 P1 —
+  previous wording would have deleted sister-session work).
+
+  **Branch-name match is not sufficient** — a reused branch name
+  (`chore/update-deps`, `fix/ci`, `bump/versions`) could hit a
+  merged PR from 40 days ago even though the session has
+  unmerged local commits under that same name on a brand-new
+  branch (codex round-8 P1). Only enqueue a worktree when BOTH:
+  (a) its branch name matches a merged PR in the last 60 days,
+  AND (b) the worktree has zero commits ahead of `origin/main`
+  (i.e. nothing new on the branch that isn't already in main).
+  The second check catches branch-name reuse and also guards
+  against "merged by someone, then cherry-picked further".
+
+      SESSION=$(basename "$PWD")
+      SELF="$PWD"
+      for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$wt_repo" ] || continue
+        owner_repo=$(git -C "$wt_repo" remote get-url origin \
+          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        since=$(date -u -d '60 days ago' +%Y-%m-%d)
+        # --limit 200 caps the page; gh defaults to 30 which
+        # is insufficient for active repos (acap has >30 merges
+        # in a 60-day window, codex round-9 P2). If even 200 is
+        # too low, re-paginate with --json mergedAt and widen
+        # the lower bound on subsequent calls.
+        merged_branches=$(gh pr list --state merged --author @me \
+          -R "$owner_repo" --search "merged:>=$since" \
+          --limit 200 --json headRefName -q '.[].headRefName')
+        git -C "$wt_repo" worktree list --porcelain 2>/dev/null \
+          | awk -v s="$SESSION" '
+              /^worktree / { wt=$2 }
+              /^branch /   { if (wt ~ s) printf "%s\t%s\n",
+                               wt, substr($2, 12) }' \
+          | while IFS=$'\t' read -r wt_path branch; do
+              # Skip the live session worktree itself — even
+              # after merge, tearing down $PWD pulls the rug
+              # out from under the running pane (codex round-9
+              # P1). Explicit guard here, not just in prose.
+              [ "$wt_path" = "$SELF" ] && continue
+              printf '%s\n' "$merged_branches" \
+                | grep -Fxq "$branch" || continue
+              ahead=$(git -C "$wt_path" rev-list --count \
+                "origin/main..HEAD" 2>/dev/null || echo 1)
+              [ "$ahead" = "0" ] || continue
+              echo "$wt_path"$'\t'"$branch"
+            done
+      done
+
+  Record to the EXECUTE queue; DO NOT remove yet.
+
+  **Two additional exclusions on top of the session-scope gate:**
+  - Skip the CURRENT worktree (`basename "$PWD"` matches itself
+    via the wildcard — still belt-and-braces: explicit skip).
+  - Skip the repo's PRIMARY worktree (the main clone root). Parse
+    `git worktree list --porcelain` and drop the first entry in
+    each repo — `git worktree remove` refuses to remove the
+    primary anyway, and any "main clone checked out on a merged
+    feature branch" case is already owned by B7 (Telegram
+    escalate, do NOT auto-fix). Primary worktree paths never
+    contain a session name, so the session-scope gate already
+    rejects them, but keep the explicit skip as a safety net.
+
+- **B4 — `CronList` entries whose PR already merged.**
+
+  For each cron whose prompt names a PR number, extract both the
+  PR number AND its repo. The repo is in the prompt text itself
+  (CronCreate prompts use `-R <owner>/<repo>` when scheduled by
+  §5 / poll-merge flows):
+
+      regex_pr_repo='-R[[:space:]]+([-_.a-zA-Z0-9]+/[-_.a-zA-Z0-9]+)[[:space:]]+.*PR[[:space:]]*#?([0-9]+)|PR[[:space:]]*#?([0-9]+)[[:space:]]+.*-R[[:space:]]+([-_.a-zA-Z0-9]+/[-_.a-zA-Z0-9]+)'
+
+  Extract `<repo>` and `<n>`, then:
+
+      gh pr view <n> -R <repo> --json state
+
+  If state ∈ `{MERGED, CLOSED}`, record to the EXECUTE queue as a
+  `CronDelete` target.
+
+  **Repo-less cron handling.** If the cron prompt does NOT name
+  `-R <repo>` (pre-dates the §5 rule that requires `-R`):
+
+  1. Try `gh pr view <n> --json state` in the current working
+     tree.
+  2. If it returns MERGED/CLOSED → enqueue `CronDelete`.
+  3. If it 404s in the CURRENT repo, fall back to a broader
+     probe: query every session-owned repo (`~/acap`, `~/alpha`,
+     `~/.files`, `~/tapai`) with `gh pr view <n> -R <repo>`.
+     Count how many repos return `OPEN` for the same number.
+
+     - **Exactly ONE repo OPEN → keep the cron.** Unambiguous
+       match; the cron is polling a live PR elsewhere. Do NOT
+       delete.
+     - **ZERO repos OPEN (all 404 or MERGED/CLOSED) → enqueue
+       `CronDelete`.** No session-owned repo has an open PR
+       under this number.
+     - **TWO OR MORE repos OPEN → AMBIGUOUS.** PR numbers are
+       per-repo, so multiple repos can independently have
+       `#<n>` open; the cron prompt text alone doesn't tell
+       us which one it was watching (codex round-10 P2).
+       Record to `${MARKER}.ambiguous` with the candidate
+       repos, Telegram-reply ONCE ("cron polling PR #<n>
+       ambiguous across <repo-A>, <repo-B>; leaving in place"),
+       do NOT delete. Operator resolves manually. The ambiguous
+       cron remains in CronList, keeps idleness condition #3
+       false, and §7 is effectively parked in that session
+       until the operator acts — acceptable because the
+       alternative (auto-delete) can stop a live merge watcher.
+
+  A CWD-only 404 does NOT prove the cron is stale — it could
+  be polling an open PR in another repo (codex round-9 P1).
+  Rationale for deletion on the ZERO-OPEN branch: no session-
+  owned repo has the number OPEN; the cron will 404 every tick
+  forever, lock idleness via condition #3, and the 2-hour
+  idle-stage sweep retires markers, not `CronList` rows.
+
+- **B7 — Main clone has a feature branch checked out.**
+
+      for r in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$r" ] || continue
+        hb=$(git -C "$r" symbolic-ref --short HEAD 2>/dev/null) || continue
+        case "$hb" in
+          main|master) ;;
+          *) echo "DANGER: $r on feature branch $hb" ;;
+        esac
+      done
+
+  Non-empty → DO NOT auto-fix; this is the auto-deploy-wipe risk
+  scenario. Escalate to Telegram once with the affected repo + branch
+  and move on. (The auto-deploy cron will silently `git reset --hard
+  origin/main` and wipe local commits; the operator needs to know
+  which sister session caused this.)
+
+Advance marker to `EXECUTE`.
+
+### Stage 2 — EXECUTE
+
+Drain ONLY the clean-up queue produced by DISCOVER. Follow-ups
+already live in `TaskList`; the next cron tick's §1 sweep will pick
+them up. Do not drain follow-ups here — that violates the staging
+guarantee.
+
+For each queued clean-up, run the sub-steps **independently** so a
+partial-success retry doesn't short-circuit. `&&` between the two
+git commands breaks idempotency: if a prior halted attempt removed
+the worktree, the retry fails on missing path and the `&&` skips
+`branch -D`, leaving the merged branch undeleted forever (codex
+round-4 P2).
+
+**Distinguish expected "already gone" from real failure.** Blanket
+`2>/dev/null || true` hides genuine errors (dirty tree, locked
+worktree, permission denied) that must reach the operator
+(codex round-5 P2). Capture stderr, match expected patterns,
+swallow only those:
+
+    # Worktree: expect "not a working tree" / "does not exist" / ENOENT
+    # on retry. Anything else is a real failure.
+    err=$(git -C "<repo>" worktree remove --force "<path>" 2>&1 1>/dev/null) || {
+      if echo "$err" | grep -qiE 'not a working tree|does not exist|no such file'; then
+        : # expected: already removed by prior halted attempt
+      else
+        printf 'B1 remove failed: %s: %s\n' "<path>" "$err" \
+          >> "$MARKER".errors
+      fi
+    }
+
+    # Branch: -D exits 1 with "not found" when branch is absent.
+    err=$(git -C "<repo>" branch -D "<name>" 2>&1 1>/dev/null) || {
+      if echo "$err" | grep -qiE 'not found|no such branch|not a valid ref'; then
+        : # expected: branch already deleted
+      else
+        printf 'B1 branch -D failed: %s: %s\n' "<name>" "$err" \
+          >> "$MARKER".errors
+      fi
+    }
+
+    # Prune leftover .git/worktrees/<slug> dir; always safe,
+    # exits 0 when nothing to prune.
+    git -C "<repo>" worktree prune 2>/dev/null || true
+
+    # Cron polling loops for merged PRs (idempotent):
+    CronDelete <cron_id>
+
+If ANY clean-up fails, write the error to
+`~/.claude/idle-stage/${SESSION}/${TICK}.errors` and continue — a failed remove
+of a stale worktree must not block the rest of the sweep. At end of
+stage, if the errors file is non-empty, Telegram-reply once with the
+concatenated error output.
+
+Docs updates: if a clean-up materially changed the truth value of a
+doc this session owns (e.g., closed a TODO entry in `~/acap/TODO.md`
+after executing its command, or a chezmoi readd invalidated a
+MEMORY.md gotcha), update the doc in-band **only if** the change
+is a deletion or a dated-audit-note append. Anything larger →
+`TaskCreate` tag `doc-update,needs-pr` for the next cycle.
+
+Advance marker to `NOTIFY`.
+
+### Stage 3 — NOTIFY (`/reflect` queue awareness, not invocation)
+
+`/reflect` is **inherently interactive** — it raises
+`AskUserQuestion` on every non-empty queue and has no
+`--auto-approve` mode. A blind `tmux send-keys "/reflect" Enter` in
+a cron-driven session with items in the queue WILL hang the pane at
+the first prompt; the subsequent cron tick cannot fire. Do NOT model
+`/reflect` on `/mcp reconnect` (§0).
+
+Pre-check the queue; if non-empty, notify the operator via Telegram
+and let them run `/reflect` out-of-band.
+
+    ENC=$(pwd | sed 's|/|-|g')
+    QF="$HOME/.claude/projects/${ENC}/learnings-queue.json"
+    if [ -f "$QF" ]; then
+      N=$(python3 -c "import json,pathlib; p=pathlib.Path('$QF'); print(len(json.loads(p.read_text())) if p.exists() else 0)" 2>/dev/null || echo 0)
+    else
+      N=0
+    fi
+
+- `N == 0` → skip entirely. No Telegram, no send-keys. Silent.
+- `N > 0` → check a rate-limit sentinel before notifying. Without
+  it, the tick-keyed marker only suppresses duplicate
+  within-the-same-half-hour notifications, so every successive
+  idle tick (every 30 min) would Telegram-spam the operator until
+  they run `/reflect` out-of-band (codex round-9 P3):
+
+      NUDGE_DIR=~/.claude/idle-harvested/${SESSION}
+      NUDGE="$NUDGE_DIR/reflect-nudge"
+      mkdir -p "$NUDGE_DIR"    # A1 may never have created it
+      # Nudge at most once per 6 hours
+      if [ ! -f "$NUDGE" ] || \
+         [ $(( $(date +%s) - $(stat -c %Y "$NUDGE") )) -ge 21600 ]; then
+        # Send the Telegram reply:
+        #   "N learnings queued in <session-name>.
+        #    Run /reflect when convenient."
+        touch "$NUDGE"
+      fi
+
+  Do NOT `tmux send-keys "/reflect"`. Do NOT call the `reflect`
+  skill from a sub-agent either — the Skill invocation still
+  reaches `AskUserQuestion`. Reset the nudge sentinel when the
+  queue drops back to 0 (on the NEXT `N==0` tick,
+  `rm -f "$NUDGE"`), so a fresh queue after a processed one gets
+  a fresh nudge within minutes instead of waiting 6 hours.
+
+Advance marker to `DONE`. Block complete; return to the main /loop
+path and resume idle waiting.
+
+### Termination / escalation
+
+- Wall-clock cap: 15 minutes for Stages 1+2 combined. At cap, write
+  `HALTED-<stage>` to the marker (where `<stage>` is the stage
+  currently in progress — DISCOVER, EXECUTE, or NOTIFY), record
+  remaining clean-ups to
+  `~/.claude/idle-stage/${SESSION}/${TICK}.deferred`, Telegram-reply
+  once with the deferred list, move on. The `-<stage>` suffix
+  preserves the information a bare `HALTED` would have erased — the
+  idempotency-marker "resume from stage" branch above reads the
+  suffix to know where to pick up, and the EXECUTE queue persisted
+  to `.deferred` is reloadable.
+- If any stage raises an exception, the marker retains its
+  last-written stage value; the next tick's resume logic picks up
+  there. Repeated failure at the same stage over 3 consecutive ticks
+  → escalate to Telegram once, stop auto-resuming, operator decides.
+
+### Operational failure modes
+
+- **Follow-up false-positives**: PR-body regex may match "Deferred
+  P2s:" in prose. Mitigation: only consume bullets under a strict
+  `## Pre-PR review` heading; reject if the P2 count line reads
+  "none" / "0".
+- **Clean-up wipes in-flight work**: guarded by skipping the
+  session's own worktree (B1) and by NOT auto-fixing the main-clone-
+  on-feature-branch case (B7).
+- **Marker corruption**: 2-hour-stale override + nightly prune
+  reset the state. Worst case: one extra sweep.
+- **`/reflect` hang**: impossible by construction — we never
+  send-keys `/reflect`. Telegram notice is the only output.
