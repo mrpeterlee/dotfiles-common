@@ -78,6 +78,9 @@ def main(ctx: click.Context, verbose: int, no_color: bool, dry_run: bool) -> Non
     # Honor NO_COLOR env var (https://no-color.org)
     if no_color or os.environ.get("NO_COLOR"):
         os.environ["NO_COLOR"] = "1"
+    from acap_dotfiles.io.log import configure
+
+    configure(verbose=verbose)
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     ctx.obj["dry_run"] = dry_run
