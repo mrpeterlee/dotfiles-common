@@ -273,83 +273,133 @@ artefact the rest of the flow consumes.
 
 ### Step 1 — Classify the change set
 
+**Accumulate surfaces, do not short-circuit.** For every file in
+`git diff --name-only --diff-filter=ACMR origin/<base>...HEAD`, walk
+the rules below and assign it the MOST SPECIFIC tag that matches.
+Mixed PRs (e.g., `src/foo.py` + `AGENTS.md`) get BOTH `code` and
+`prompt_like` in `surfaces`; Step 3 then runs the matching test
+profile for each tag. First-match-wins was wrong — reviewers caught
+this on the initial draft.
+
 If `gstack-diff-scope` is installed (check: `command -v gstack-diff-scope`),
-source it first to get the baseline scope flags (`SCOPE_DOCS`,
+source it first to get its baseline scope flags (`SCOPE_DOCS`,
 `SCOPE_CODE`, `SCOPE_PROMPTS`, `SCOPE_CONFIG`, `SCOPE_MIGRATIONS`,
-`SCOPE_TESTS`). Use those as a first-pass signal; fall through to the
-decision tree for precision and for the `prompt_like` /
-`md_with_code` tags it does not emit.
+`SCOPE_TESTS`). Use them as a cheap pre-pass; still run the tree
+below for the `prompt_like` / `md_with_code` tags it does not emit
+and for precision on the `config` split that the tree performs but
+`gstack-diff-scope` conflates with `code`.
 
-Run `git diff --name-only --diff-filter=ACMR origin/<base>...HEAD` and
-walk this decision tree top to bottom. **First match wins.**
+**Override check (runs before the per-file walk).**
 
-0. **Override check.**
-   - `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Skip:'`
-     → skip, record the reason from the trailer.
-   - `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Run:'`
-     → run, record the reason.
-   - `gh pr view --json labels --jq '.labels[].name' 2>/dev/null`
-     containing `gate-force-run` / `gate-force-skip` (when re-running
-     on an existing PR) → run / skip accordingly.
+- `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Skip:'`
+  → force skip, record the reason from the trailer.
+- `git log --format=%B origin/<base>..HEAD | grep -iE '^Gate-Run:'`
+  → force run, record the reason.
+- `gh pr view --json labels --jq '.labels[].name' 2>/dev/null`
+  containing `gate-force-run` / `gate-force-skip` (when re-running on
+  an existing PR) → run / skip accordingly.
+- If no files changed → skip, reason `no files changed`.
 
-1. **Empty diff** → skip, reason `no files changed`.
+**Per-file tagging rules (pick the FIRST rule that matches this
+file — do NOT stop walking the file list after a hit; continue to the
+next file):**
 
-2. **Hard-RUN globs.** Any hit ⇒ run, tag as `code`:
+1. **`config`** — infra / workflow / runtime config that has a
+   dedicated dry-run/lint path (NOT TDD):
 
-       **/*.py **/*.ts **/*.tsx **/*.js **/*.go **/*.rs **/*.sh
-       **/Makefile **/Dockerfile* **/pyproject.toml **/package.json
-       **/uv.lock **/poetry.lock **/requirements*.txt
-       **/*.tmpl **/executable_*.sh **/run_once_*.sh   (chezmoi)
-       .github/workflows/*.{yml,yaml}
+       .github/workflows/**/*.{yml,yaml}
        ansible/**/*.{yml,yaml,j2}
        terraform/**/*.{tf,tfvars}
        gitops/**/*.{yml,yaml}
-       .claude/settings*.json  .claude/hooks/**
+       .claude/settings*.json
+       **/docker-compose*.{yml,yaml}
+       **/Dockerfile*
 
-3. **Prompt-surface globs.** Any hit ⇒ run, tag `prompt_like`:
+2. **`prompt_like`** — files that drive LLM behaviour:
 
        CLAUDE.md  AGENTS.md
        **/loop_prompt*.md
-       **/skills/*/SKILL.md   **/agents/*.md
+       **/skills/*/SKILL.md
+       **/agents/*.md
        .agents/claude/rules/**/*.md
        .agents/claude/skills/**/SKILL.md
        .agents/claude/commands/**/*.md
 
-4. **Embedded-code sniff** on remaining `*.md`. If the diff hunks
+3. **`shell`** — standalone shell / chezmoi templates:
+
+       **/*.sh  **/*.bash  **/*.zsh
+       **/executable_*.sh  **/run_once_*.sh
+       **/*.tmpl   (chezmoi — may render to shell OR config; tag both
+                   `shell` and `config` and run both test profiles)
+
+4. **`code`** — source code subject to full TDD:
+
+       **/*.py  **/*.ts  **/*.tsx  **/*.js  **/*.go  **/*.rs
+       **/*.java  **/*.kt  **/*.rb  **/*.swift  **/*.cs  **/*.cpp
+       **/Makefile  **/pyproject.toml  **/package.json
+       **/uv.lock  **/poetry.lock  **/requirements*.txt
+       .claude/hooks/**
+
+5. **`md_with_code`** — otherwise-inert markdown whose diff hunks
    contain fenced ``` ```{bash,sh,python,ts,js,yaml,json,dockerfile}``` ```
    blocks ≥ 3 lines, leading `$ ` CLI prefixes, or an explicit
-   `<!-- gate:run -->` marker → run, tag `md_with_code`.
+   `<!-- gate:run -->` marker. Routes to the parse-check profile in
+   Step 3, not TDD.
 
-5. **Docs-only residue.** All remaining files are inert: `*.md` with
-   no embedded code, `*.txt`, `*.rst`, `docs/**`, `**/*.png`,
-   `**/*.svg`, `CHANGELOG*`, `README*` → skip, reason
-   `docs-only: N markdown + M image files, no code/config/prompt surfaces`.
+6. **`docs`** — everything else: `.md` without embedded code, `.txt`,
+   `.rst`, `docs/**`, `.png`, `.svg`, `CHANGELOG*`, `README*`,
+   license files, generated diagrams.
 
-6. **Default** → run, tag `unknown`. Unknown extensions bias toward
-   running — false-positive-run is cheap; false-positive-skip ships
-   untested code.
+7. **`unknown`** — file types not listed above. Treat as `code` for
+   routing — false-positive-run is cheap; false-positive-skip ships
+   untested behaviour.
+
+**Verdict computation.**
+
+    surfaces = union(per_file_tag for each file)
+
+    if surfaces == {"docs"}:
+        verdict = "skip"
+        reason  = "docs-only: N files, no code/config/prompt surfaces"
+    else:
+        verdict = "run"
+
+One path to `skip`: every file ended up tagged `docs`. Any other
+combination — even one config file alongside a hundred docs — runs
+the gate for the config surface and passes docs through as no-op.
 
 Write the verdict and manifest to `.claude/pre-pr/<head-sha>/verdict.json`:
 
     {
       "verdict": "run" | "skip",
       "reason": "...",
-      "surfaces": ["code", "prompt_like", ...],
-      "files_needing_tests": [...],
-      "prompt_files": [...],
+      "surfaces": ["code", "prompt_like", "config", ...],
+      "files_by_tag": {
+        "code":        ["core/src/acap/pipeline/gate.py"],
+        "config":      [".github/workflows/ci.yml"],
+        "prompt_like": ["AGENTS.md"],
+        "shell":       [],
+        "md_with_code":[],
+        "docs":        ["docs/reference/.../plan.md"]
+      },
       "base_sha": "...",
       "head_sha": "..."
     }
 
-On `skip`, paste the one-line justification into the PR body under a
+`files_by_tag` is the single source of truth for routing in Step 3.
+Step 3 iterates over every non-empty bucket and runs the matching
+test profile — not just the first, not just the primary. On `skip`,
+paste the one-line justification into the PR body under a
 `## Pre-PR behavioural gate` section and fall through to §4a.
 
 ### Step 2 — Describe the usages (runs on `verdict: run` only)
 
-For every file in `files_needing_tests` + every tagged
-`prompt_files` entry, write a structured description to
-`.claude/pre-pr/<head-sha>/usages.md`. One section per file. Each
-section:
+For every file listed under `files_by_tag.code`, `files_by_tag.shell`,
+`files_by_tag.prompt_like`, and `files_by_tag.md_with_code`, write a
+structured description to `.claude/pre-pr/<head-sha>/usages.md`.
+`files_by_tag.config` and `files_by_tag.docs` do not require a usages
+section (config is dry-run-only; docs are inert). One section per
+file. Each section:
 
 - **What changed** — the diff hunks in one paragraph.
 - **Who calls this** — every caller path you can identify via `grep`
@@ -374,9 +424,11 @@ the "skimmed the diff, wrote a shallow doc" failure mode.
 
 ### Step 3 — Design + run the tests
 
-Route by tag. For each `files_needing_tests` entry, produce or update
-a test (or a batch of tests) per the profile, then run it. Red →
-Green. Keep artefacts under `.claude/pre-pr/<head-sha>/tests/`.
+**Iterate every non-empty bucket in `files_by_tag`.** Run the matching
+test profile for EACH surface that appears — a mixed PR with `code` +
+`prompt_like` runs both the code profile and the prompt_like profile;
+it does not pick one. Keep artefacts under
+`.claude/pre-pr/<head-sha>/tests/`.
 
 **Compose with existing skills — do NOT re-invent:**
 
@@ -386,14 +438,27 @@ Green. Keep artefacts under `.claude/pre-pr/<head-sha>/tests/`.
   integration where the surface warrants. Verify coverage ≥ repo
   standard (80% if the repo enforces one, else at least every
   call-site in usages.md is exercised).
-- **Tag `code` (shell subset)** → `shellcheck`; `bats` if the repo
-  has a `tests/bats/` tree, else generate a minimal harness driven by
-  the usages.md (stub env, capture stdout/stderr/exit, assert).
-- **Config (yaml/tf/ansible/workflows)** → dry-run / lint:
-  `actionlint` for workflows, `ansible-lint --syntax-check` for
-  playbooks, `terraform validate && terraform plan` for .tf,
-  `jq .` / `yq '.'` schema check for loose JSON/YAML. No unit tests
-  required; dry-run must pass clean.
+- **Tag `shell`** → `shellcheck`; `bats` if the repo has a
+  `tests/bats/` tree, else generate a minimal harness driven by the
+  usages.md (stub env, capture stdout/stderr/exit, assert). Chezmoi
+  `.tmpl` files: render with representative `--data` and then run the
+  `shell` profile on the rendered output.
+- **Tag `config`** → dry-run / lint only; no unit tests required:
+  - `.github/workflows/*.{yml,yaml}` → `actionlint`.
+  - `ansible/**/*.{yml,yaml,j2}` → `ansible-lint --syntax-check`,
+    plus `ansible-playbook --syntax-check --check <playbook>` where
+    applicable.
+  - `terraform/**/*.{tf,tfvars}` → `terraform fmt -check`,
+    `terraform init -backend=false`, `terraform validate`, and —
+    when credentials are available — `terraform plan`.
+  - `gitops/**/*.{yml,yaml}` → `kubeconform` (or `kubectl apply
+    --dry-run=client -f`).
+  - `.claude/settings*.json` → `jq .` round-trip + schema check if a
+    schema is bundled; reject any hook script path that does not
+    exist on disk.
+  - `docker-compose*`, `Dockerfile*` → `docker compose config` /
+    `hadolint`.
+  Dry-run must exit clean.
 - **Tag `prompt_like`** → (a) **static-shape tests**: frontmatter
   parses, every required section heading is present, intra-repo links
   resolve, token count fits the host's context budget. (b) **smoke
@@ -406,6 +471,7 @@ Green. Keep artefacts under `.claude/pre-pr/<head-sha>/tests/`.
 - **Tag `md_with_code`** → extract fenced blocks; prove they at least
   parse: `bash -n`, `python -m py_compile`, `yq '.'`, `jq .`. Any
   parse error → fail the gate.
+- **Tag `docs`** → no-op. Docs pass through unchecked.
 
 **Behavioural-coverage audit (tag `code` only).** Once tests are
 green, dispatch the `pr-test-analyzer` agent with the diff + the new
