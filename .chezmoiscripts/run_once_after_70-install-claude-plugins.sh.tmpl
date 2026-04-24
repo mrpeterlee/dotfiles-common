@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Install npm globals (gemini-cli, codex), Claude plugin marketplaces, and
+# Claude plugins. Driven by .chezmoidata/agents.yaml. Does NOT register
+# MCP servers — that's handled by run_onchange_after_install-mcp.sh.tmpl.
+#
+# manifest hash: {{ include ".chezmoidata/agents.yaml" | sha256sum }}
+# claude present: {{ lookPath "claude" | default "missing" }}
+# npm present:    {{ lookPath "npm" | default "missing" }}
+
+set -euo pipefail
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[install-claude-plugins] claude CLI not found; skipping plugin install"
+  echo "[install-claude-plugins] (this script will re-run automatically once claude is installed)"
+  exit 0
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "[install-claude-plugins] npm not found; skipping npm globals" >&2
+else
+  {{- range $name := .npm_packages | default (list) }}
+  echo "[install-claude-plugins] installing npm global: {{ $name }}"
+  npm install -g {{ $name | quote }} 2>&1 | tail -3 || echo "[warn] npm install {{ $name }} failed"
+  {{- end }}
+fi
+
+{{- range $url := .claude_marketplaces | default (list) }}
+echo "[install-claude-plugins] adding marketplace: {{ $url }}"
+claude plugin marketplace add {{ $url | quote }} 2>&1 | tail -3 || \
+  echo "[warn] marketplace add {{ $url }} failed (may already exist)"
+{{- end }}
+
+{{- range $plugin := .claude_plugins | default (list) }}
+echo "[install-claude-plugins] installing plugin: {{ $plugin }}"
+claude plugin install {{ $plugin | quote }} 2>&1 | tail -3 || \
+  echo "[warn] plugin install {{ $plugin }} failed (may already exist)"
+{{- end }}
+
+echo "[install-claude-plugins] done"
