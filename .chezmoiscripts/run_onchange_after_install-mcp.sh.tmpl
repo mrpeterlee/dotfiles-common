@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 # Idempotently register MCP servers from mcp/servers.json with the user-scope
-# Claude Code config (~/.claude.json). Re-runs whenever the manifest changes.
+# Claude Code config (~/.claude/.claude.json). Re-runs whenever the manifest
+# changes, OR when the claude CLI's presence changes (so a fresh-bootstrap
+# host that installs claude *after* a chezmoi apply still gets registrations
+# on the next apply).
 #
 # servers.json hash: {{ include "mcp/servers.json" | sha256sum }}
+# claude present: {{ lookPath "claude" | default "missing" }}
 
 set -euo pipefail
 
+# Pin the user-scope config to ~/.claude/.claude.json (this is where the rest
+# of the dotfiles point claude at via dot_config/zsh/dot_zshenv:13). chezmoi
+# scripts run from bash before zsh is sourced, so the env var must be set
+# explicitly here or 'claude mcp add -s user' writes to the default
+# $HOME/.claude.json instead.
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+
 if ! command -v claude >/dev/null 2>&1; then
   echo "[install-mcp] claude CLI not found; skipping MCP registration"
+  echo "[install-mcp] (this script will re-run automatically once claude is installed)"
   exit 0
 fi
 
@@ -26,8 +38,10 @@ fi
 count=0
 while IFS= read -r name; do
   cfg=$(jq -c --arg n "$name" '.[$n]' "$src")
-  # remove-then-add gives idempotency — claude mcp add errors on duplicate
-  claude mcp remove "$name" >/dev/null 2>&1 || true
+  # Scope remove explicitly to user — without -s, claude errors out with
+  # 'exists in multiple scopes' if a same-named local/project entry also
+  # exists, then the add-json fails with 'already exists in user config'.
+  claude mcp remove -s user "$name" >/dev/null 2>&1 || true
   if claude mcp add-json -s user "$name" "$cfg" >/dev/null; then
     count=$((count + 1))
   else
