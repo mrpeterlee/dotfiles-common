@@ -152,6 +152,47 @@ def test_build_argv_dry_run_still_works_for_bare_mutating_verb() -> None:
     assert "--dry-run" in argv
 
 
+def test_dry_run_injected_when_global_flag_with_operand_precedes_verb(
+    fake_process: object,
+) -> None:
+    """build_argv(['-S', '/tmp/src', 'apply']) with dry_run=True must inject --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["-S", "/tmp/src", "apply"])
+    assert "--dry-run" in argv
+
+
+def test_dry_run_injected_when_long_global_with_operand_precedes_verb(
+    fake_process: object,
+) -> None:
+    """build_argv(['--config', 'cfg.toml', 'update']) with dry_run=True must inject --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["--config", "cfg.toml", "update"])
+    assert "--dry-run" in argv
+
+
+def test_dry_run_skipped_when_global_with_operand_precedes_read_verb(
+    fake_process: object,
+) -> None:
+    """build_argv(['-S', '/tmp/src', 'data']) with dry_run=True must NOT inject --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["-S", "/tmp/src", "data"])
+    assert "--dry-run" not in argv
+
+
+def test_dry_run_handles_equals_form_global(fake_process: object) -> None:
+    """build_argv(['--source=/tmp/src', 'apply']) with dry_run=True must inject --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["--source=/tmp/src", "apply"])
+    assert "--dry-run" in argv
+
+
+def test_dry_run_handles_multiple_globals_before_verb(fake_process: object) -> None:
+    """build_argv(['--debug', '-S', '/tmp/src', '--config', 'cfg.toml', 'apply']) injects --dry-run."""
+    w = Wrapper(binary=Path("/usr/bin/chezmoi"), dry_run=True)
+    argv = w.build_argv(["--debug", "-S", "/tmp/src", "--config", "cfg.toml", "apply"])
+    assert "--dry-run" in argv
+
+
 def test_discover_binary_skips_non_executable_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

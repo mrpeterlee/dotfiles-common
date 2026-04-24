@@ -45,16 +45,45 @@ _CANONICAL_ARGS: tuple[str, ...] = (
     "--progress=false",
 )
 
+# Global chezmoi flags that consume the next argv element as their value.
+# Verb-resolution must skip the operand to find the actual verb.
+_VALUE_TAKING_GLOBALS: frozenset[str] = frozenset(
+    {
+        "-c",
+        "--config",
+        "--config-format",
+        "-D",
+        "--destination",
+        "--persistent-state",
+        "--cpu-profile",
+        "-S",
+        "--source",
+        "--source-path",
+    }
+)
+
 
 def _first_non_option(args: Sequence[str]) -> str | None:
-    """Return the first arg that doesn't start with `-` (i.e. the verb).
+    """Return the first non-option arg (the chezmoi verb), skipping global option operands.
 
     chezmoi accepts global flags (e.g. `--debug`, `-v`) before the verb, so
     `args[0]` is not a reliable indicator of which subcommand will run.
+
+    Some global flags (e.g. `-S /tmp/src`, `--config cfg.toml`) consume the
+    next argv element as their value. We must skip those operands so we don't
+    mistake them for the verb. The single-arg `--key=value` form is naturally
+    handled because it still starts with `-` and the loop continues.
     """
+    skip_next = False
     for a in args:
+        if skip_next:
+            skip_next = False
+            continue
         if not a.startswith("-"):
             return a
+        # `--key=value` is single-arg; `--key value` and `-k value` are two-arg
+        if a in _VALUE_TAKING_GLOBALS:
+            skip_next = True
     return None
 
 
