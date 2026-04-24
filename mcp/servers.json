@@ -1,0 +1,10 @@
+{
+  "playwright": {
+    "command": "npx",
+    "args": ["@playwright/mcp@latest"]
+  },
+  "ralph-loop": {
+    "command": "npx",
+    "args": ["@claude-plugins/ralph-loop"]
+  }
+}

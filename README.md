@@ -52,6 +52,7 @@ stacking natively. Until then, overlays are applied via their own
 | **Git** | lazygit, git config with aliases |
 | **File Manager** | yazi |
 | **Utilities** | fzf, zoxide, bat, ripgrep |
+| **AI Agents** | Claude Code (settings, commands, skills), Codex (config, prompts), OpenCode, MCP servers |
 
 Org-specific content (project aliases, infisical/vault wrappers,
 per-org tmuxinator sessions, per-org SSH config) lives in overlays,
@@ -128,9 +129,12 @@ chezmoi init --force
 ├── .chezmoiignore          # Platform exclusions
 ├── .chezmoiexternal.toml   # External deps (TPM, zinit, fzf)
 ├── .chezmoiscripts/        # Installation scripts
-├── dot_config/             # ~/.config/* files
+├── dot_config/             # ~/.config/* files (incl. opencode/)
+├── dot_claude/             # ~/.claude/ — Claude Code config + skills + commands
+├── dot_codex/              # ~/.codex/ — Codex CLI config + prompts
 ├── private_dot_local/      # ~/.local/* files
 ├── dot_*                   # Home directory dotfiles
+├── mcp/servers.json        # MCP servers (registered via chezmoi onchange)
 ├── tests/                  # Hygiene + render-matrix CI gates
 └── docs/                   # Convention docs (overlay, secrets)
 ```
