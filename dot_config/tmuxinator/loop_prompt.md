@@ -925,16 +925,42 @@ Marker **content** is the current stage
 (`DISCOVER|EXECUTE|NOTIFY|DONE|HALTED-<stage>`). File presence
 means the block has begun on this tick; content means where it is.
 
-- Content `DONE` → skip the block entirely, the tick has been
-  serviced.
-- Content `DISCOVER|EXECUTE|NOTIFY` → resume from that stage
-  (prior execution aborted; pick up where it left off). The stage
-  handlers are idempotent.
-- Content `HALTED-<stage>` → resume from `<stage>` (the 15-min cap
-  wrote this; `<stage>` preserves the information the naive
-  `HALTED` marker would have erased — codex round-3 P2). After
-  resume, re-check the wall-clock budget; the second-attempt cap
-  resets fresh.
+**Before writing `$MARKER`**, scan the session's full history for
+an unfinished run from a prior tick and finish it first:
+
+    # Any marker in this session's dir with non-DONE content from
+    # the last 2 hours is pending resumption.
+    find ~/.claude/idle-stage/"${SESSION}" -maxdepth 1 -type f \
+        -mmin -120 2>/dev/null \
+      | while read -r mf; do
+          state=$(cat "$mf" 2>/dev/null)
+          case "$state" in
+            DONE|"") : ;;
+            HALTED-*|DISCOVER|EXECUTE|NOTIFY)
+              echo "resume $mf state=$state"
+              ;;
+          esac
+        done
+
+If any pending marker is found, resume THAT marker's tick first —
+do NOT start a new one for the current TICK until the unfinished
+one reaches `DONE` or is retired at the 2-hour stale boundary.
+Without this scan, a timeout on the previous tick writes
+`HALTED-EXECUTE` to `…/T1000`, the next cron fires with `TICK=T1030`
+and creates a fresh marker; the prior `.deferred` EXECUTE queue is
+abandoned. (Codex round-4 P1.)
+
+For the current tick's marker, interpret its content:
+
+- `DONE` → skip the block entirely; the tick has been serviced.
+- `DISCOVER|EXECUTE|NOTIFY` → resume from that stage (prior
+  execution aborted; pick up where it left off). The stage handlers
+  are idempotent.
+- `HALTED-<stage>` → resume from `<stage>` (the 15-min cap wrote
+  this; `<stage>` preserves the information the naive `HALTED`
+  marker would have erased). Re-load the EXECUTE queue from
+  `.deferred` if present. After resume, re-check the wall-clock
+  budget; the second-attempt cap resets fresh.
 - Marker older than 2 hours without `DONE` → treat as stale and
   restart from `DISCOVER`.
 
@@ -952,10 +978,20 @@ follow-up work in-band, only clean-ups.
 
 - **A1 — Deferred P2s in merged PR bodies (last 7 days).**
 
-      gh pr list --author @me --state merged --limit 20 \
-        --json number,body,mergedAt,repository \
-        -q '.[] | select(.mergedAt > (now - 7*86400 | todate))
-                | select(.body | test("Deferred P2s: (?!none)"; "i"))'
+  Per-repo query — `gh pr list` without `-R` scopes to CWD only
+  and would miss merged PRs in other session-owned repos
+  (codex round-4 P2). Iterate the session-owned repo list:
+
+      for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$wt_repo" ] || continue
+        owner_repo=$(git -C "$wt_repo" remote get-url origin \
+          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        gh pr list --author @me --state merged --limit 20 \
+          -R "$owner_repo" \
+          --json number,body,mergedAt,repository \
+          -q '.[] | select(.mergedAt > (now - 7*86400 | todate))
+                  | select(.body | test("Deferred P2s: (?!none)"; "i"))'
+      done
 
   For each PR, parse the `## Pre-PR review` block; for each P2
   bullet, `TaskCreate` with tag `follow-up,pr-<n>,deferred-p2` and
@@ -971,11 +1007,19 @@ follow-up work in-band, only clean-ups.
 
 - **A4 — Draft PRs from @me (likely §4b FAIL survivors).**
 
-      gh pr list --author @me --state open --draft \
-        --json number,title,body,repository,updatedAt \
-        -q '.[] | select(.body
-                | test("Pre-PR (behavioural gate|review).*(FAIL|bypassed|skipped)"; "i"))
-                | select((.updatedAt | fromdateiso8601) < (now - 7200))'
+  Same per-repo loop as A1:
+
+      for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$wt_repo" ] || continue
+        owner_repo=$(git -C "$wt_repo" remote get-url origin \
+          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        gh pr list --author @me --state open --draft \
+          -R "$owner_repo" \
+          --json number,title,body,repository,updatedAt \
+          -q '.[] | select(.body
+                  | test("Pre-PR (behavioural gate|review).*(FAIL|bypassed|skipped)"; "i"))
+                  | select((.updatedAt | fromdateiso8601) < (now - 7200))'
+      done
 
   (Only drafts older than 2h, to avoid racing an in-flight §4b
   fail-and-retry.) For each, `TaskCreate` with tag
@@ -1000,8 +1044,22 @@ follow-up work in-band, only clean-ups.
         git -C "$r" worktree list --porcelain 2>/dev/null
       done
 
-  Cross-reference each worktree's branch against
-  `gh pr list --author @me --state merged --limit 30 --json headRefName,repository`.
+  Cross-reference each worktree's branch against the **per-repo**
+  merged PR list — a single cross-repo `gh pr list` misses branches
+  in non-CWD repos (codex round-4 P2). Use the repo of the
+  worktree itself:
+
+      for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
+        [ -d "$wt_repo" ] || continue
+        owner_repo=$(git -C "$wt_repo" remote get-url origin \
+          | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
+        merged_branches=$(gh pr list --author @me --state merged \
+          --limit 30 -R "$owner_repo" --json headRefName \
+          -q '.[].headRefName')
+        # For each worktree in $wt_repo, emit it if its branch is
+        # in $merged_branches.
+      done
+
   Record to the EXECUTE queue; DO NOT remove yet.
 
   **Two exclusions from the queue, not just one:**
@@ -1061,11 +1119,26 @@ already live in `TaskList`; the next cron tick's §1 sweep will pick
 them up. Do not drain follow-ups here — that violates the staging
 guarantee.
 
-For each queued clean-up:
+For each queued clean-up, run the sub-steps **independently** so a
+partial-success retry doesn't short-circuit. `&&` between the two
+git commands breaks idempotency: if a prior halted attempt removed
+the worktree, the retry fails on missing path and the `&&` skips
+`branch -D`, leaving the merged branch undeleted forever (codex
+round-4 P2).
 
-- `git -C <repo> worktree remove <path> && git -C <repo> branch -D <name>`
-  (idempotent; harmless if either step already happened).
-- `CronDelete <cron_id>` for merged-PR polling loops.
+    # Worktree (ignore ENOENT on retry — already gone is fine):
+    git -C "<repo>" worktree remove --force "<path>" 2>/dev/null || true
+
+    # Branch (separate, also idempotent via -D which exits 1 if
+    # branch is absent; swallow that):
+    git -C "<repo>" branch -D "<name>" 2>/dev/null || true
+
+    # Clean up .git/worktrees/<slug> dir for the removed worktree
+    # in case `worktree remove` was skipped above (rare race):
+    git -C "<repo>" worktree prune 2>/dev/null || true
+
+    # Cron polling loops for merged PRs:
+    CronDelete <cron_id>
 
 If ANY clean-up fails, write the error to
 `~/.claude/idle-stage/${SESSION}/${TICK}.errors` and continue — a failed remove
