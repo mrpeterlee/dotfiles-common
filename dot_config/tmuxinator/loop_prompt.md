@@ -1012,6 +1012,26 @@ follow-up work in-band, only clean-ups.
   bullet, `TaskCreate` with tag `follow-up,pr-<n>,deferred-p2` and
   body `{repo, pr, finding, file:line if present}`.
 
+  **Dedupe across idle sweeps (codex round-8 P2).** A1 re-runs
+  on every idle tick, and the 7-day window means a PR with
+  deferred P2s gets re-scanned every ~6 hours until it falls out
+  of the window. Without a dedupe check, the same P2 becomes a
+  fresh `TaskCreate` each sweep and effectively re-opens
+  follow-up work §1 said should stay closed once completed.
+
+  Before creating tasks for a PR, check a per-PR sentinel:
+
+      HARVEST=~/.claude/idle-stage/${SESSION}/harvested
+      mkdir -p "$HARVEST"
+      sentinel="$HARVEST/${owner_repo//\//-}-${pr_number}.done"
+      [ -f "$sentinel" ] && continue   # already harvested
+
+  After successfully emitting all `TaskCreate` entries for that
+  PR's P2 bullets, `touch "$sentinel"`. The sentinel directory
+  is nightly-pruned with mtime > 14d so any PR reopened beyond
+  that window will re-harvest (acceptable: a reopened PR is
+  new work).
+
 - **A2 — Note.** Idleness already requires `TaskList` to be empty,
   so there is nothing to "find" here at DISCOVER time. If an
   earlier row in THIS same pass (A1) emits a `TaskCreate`, DO NOT
@@ -1059,11 +1079,19 @@ follow-up work in-band, only clean-ups.
 
   **Session-scoped from the start** — iterate only worktrees whose
   path contains this session's name. A tree belonging to a sister
-  session must NEVER enter this queue; the previous "just
-  exclude the current worktree" rule was not enough because the
-  loop also walked `~/acap/.claude/worktrees/acap_cc_1`,
-  `~/.files/.claude/worktrees/p2-5-cherrypick-agents`, etc.
-  (codex round-7 P1 — would have deleted sister-session work):
+  session must NEVER enter this queue (codex round-7 P1 —
+  previous wording would have deleted sister-session work).
+
+  **Branch-name match is not sufficient** — a reused branch name
+  (`chore/update-deps`, `fix/ci`, `bump/versions`) could hit a
+  merged PR from 40 days ago even though the session has
+  unmerged local commits under that same name on a brand-new
+  branch (codex round-8 P1). Only enqueue a worktree when BOTH:
+  (a) its branch name matches a merged PR in the last 60 days,
+  AND (b) the worktree has zero commits ahead of `origin/main`
+  (i.e. nothing new on the branch that isn't already in main).
+  The second check catches branch-name reuse and also guards
+  against "merged by someone, then cherry-picked further".
 
       SESSION=$(basename "$PWD")
       for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
@@ -1074,14 +1102,20 @@ follow-up work in-band, only clean-ups.
         merged_branches=$(gh pr list --state merged --author @me \
           -R "$owner_repo" --search "merged:>=$since" \
           --json headRefName -q '.[].headRefName')
-        # Enumerate THIS session's worktrees in this repo only
         git -C "$wt_repo" worktree list --porcelain 2>/dev/null \
           | awk -v s="$SESSION" '
               /^worktree / { wt=$2 }
               /^branch /   { if (wt ~ s) printf "%s\t%s\n",
-                               wt, substr($2, 12) }'
-        # … filter the resulting <wt-path>\t<branch> pairs by
-        # branch ∈ $merged_branches and enqueue for EXECUTE.
+                               wt, substr($2, 12) }' \
+          | while IFS=$'\t' read -r wt_path branch; do
+              printf '%s\n' "$merged_branches" \
+                | grep -Fxq "$branch" || continue
+              ahead=$(git -C "$wt_path" rev-list --count \
+                "origin/main..HEAD" 2>/dev/null || echo 1)
+              [ "$ahead" = "0" ] || continue
+              # Enqueue <wt-path> <branch> for EXECUTE.
+              echo "$wt_path"$'\t'"$branch"
+            done
       done
 
   Record to the EXECUTE queue; DO NOT remove yet.
