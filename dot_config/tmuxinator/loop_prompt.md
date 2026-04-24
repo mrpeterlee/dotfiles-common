@@ -8,6 +8,95 @@ ping the operator when there is something worth their attention.
 
 ---
 
+## 0. Telegram MCP liveness guard — runs FIRST every tick
+
+The operator reads Telegram only (see §3). If the Telegram MCP plugin
+has disconnected since session start, every reply you make is invisible
+to them until you reconnect. Run this guard BEFORE §1's sweep, on every
+cron firing.
+
+### Detection
+
+The Telegram MCP is **disconnected** when EITHER condition holds:
+
+1. The current turn contains a `<system-reminder>` listing
+   `mcp__plugin_telegram_telegram__*` under "deferred tools are no longer
+   available (their MCP server disconnected)". This is the strongest
+   signal — the runtime itself is telling you.
+2. You attempt to call `mcp__plugin_telegram_telegram__reply` (or any
+   sibling tool) and receive `No such tool available`.
+
+Absence of the Telegram tool schemas in the current tool list is
+sufficient evidence. You do **not** need to send a synthetic probe.
+
+**Do NOT use `claude mcp list` as the detection signal.** The CLI
+maintains its own health cache that can report `✓ Connected` while the
+in-session tool registry has lost the server (observed live
+2026-04-24).
+
+### Reconnection (primary path)
+
+The only in-session mechanism that actually reconnects a plugin-
+provided stdio MCP is to inject the slash command into your own tmux
+pane. There is no `claude mcp reconnect` CLI and the model cannot type
+slash commands through any tool. Run:
+
+    tmux send-keys -t "${TMUX_PANE:?}" \
+      "/mcp reconnect plugin:telegram:telegram" Enter
+
+The command queues until your current turn ends, then the runtime
+executes it exactly as if the operator had typed it and responds with:
+
+    Successfully reconnected to plugin:telegram:telegram
+
+The deferred-tools schemas re-appear on the next tool discovery.
+Re-load the reply tool with `ToolSearch select:mcp__plugin_telegram_telegram__reply`
+and send one Telegram `reply` confirming recovery:
+
+    MCP reconnect recovered after N attempts.
+
+so the operator sees the gap closed.
+
+### Retry budget + fallback
+
+Persist a counter at `${TELEGRAM_STATE_DIR:?}/mcp-reconnect.count`
+(atomic write, integer). Key it by `$TELEGRAM_STATE_DIR` — which is
+already per-session — not a shared host path, so concurrent Claude
+panes on the same host don't cross-wire their retry budgets.
+
+- Increment at every tick where detection fires.
+- Reset to `0` on the first successful post-reconnect `reply`.
+- When the counter reaches **3** (≈ 90 min blind), emit ONE fallback
+  ping via direct Bot API curl so the operator knows the session is
+  alive but MCP-deaf. Use the helper:
+
+        ~/.claude/scripts/telegram-fallback.sh \
+          "MCP reconnect failed 3× — session alive, still retrying."
+
+  The helper reads `$TELEGRAM_BOT_TOKEN` (already in your Bash env) and
+  chat_id from `$TELEGRAM_STATE_DIR/access.json`. Never inline the
+  token. Never echo it to a log.
+
+- After the fallback ping, keep attempting `tmux send-keys` reconnect
+  every tick silently. Emit no further fallback pings until reconnect
+  succeeds AND then fails again.
+
+If `telegram-fallback.sh` itself errors (missing, token unset, HTTP
+non-200), emit one line via `logger -t loop-prompt-mcp-guard -p user.warning "<reason>"`
+(journald ingests it — `journalctl` is the read path) and continue —
+do not spam the local TTY.
+
+### Why this shape
+
+Proven live on 2026-04-24: the `tmux send-keys` injection is the only
+path that actually round-trips the runtime's built-in `/mcp reconnect`
+command from inside a session. External watchdog designs (systemd user
+timer probing `claude mcp list`) are more decoupled but add infra
+that's out of scope for a prompt-level fix; layer one on later if
+90-minute detection latency ever proves insufficient.
+
+---
+
 ## 1. Every 30 minutes — task sweep
 
 At every cron firing (`0,30 * * * *`), classify every entry in the
