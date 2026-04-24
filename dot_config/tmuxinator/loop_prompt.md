@@ -911,19 +911,35 @@ already serviced" guarantee:
              "$(date -u +%Y%m%d)" \
              "$(date -u +%H)" \
              "$floor")
-    # e.g., at 10:17 UTC → 20260424T1000
-    #       at 10:47 UTC → 20260424T1030
+    SESSION=$(basename "$PWD")      # worktree name = session name
+    MARKER=~/.claude/idle-stage/${SESSION}/${TICK}
 
-and write marker `~/.claude/idle-stage/${TICK}` whose **content** is
-the current stage (`DISCOVER|EXECUTE|NOTIFY|DONE`). File presence
+**Namespace the marker by session.** All Claude panes on the host
+share `~/.claude/idle-stage/`; without the `${SESSION}/` subdir,
+sister sessions (`acap_cc_1..4`, `alpha_cc_*`, `tapai_cc_*`) would
+race on the same marker file — one session's `DONE` would make
+another's entire tick a no-op. The session subdir is mkdir-p'd
+before first write.
+
+Marker **content** is the current stage
+(`DISCOVER|EXECUTE|NOTIFY|DONE|HALTED-<stage>`). File presence
 means the block has begun on this tick; content means where it is.
-If the file already exists and holds `DONE`, skip the block entirely
-— the tick has already been serviced. If it holds any other value,
-resume from that stage (prior execution aborted; pick up where it
-left off). If the file is older than 2 hours without a `DONE`, treat
-it as stale and restart from `DISCOVER`. `~/.claude/idle-stage/` is
-nightly-pruned by the tmuxinator bootstrap (`find ... -mtime +2
--delete`).
+
+- Content `DONE` → skip the block entirely, the tick has been
+  serviced.
+- Content `DISCOVER|EXECUTE|NOTIFY` → resume from that stage
+  (prior execution aborted; pick up where it left off). The stage
+  handlers are idempotent.
+- Content `HALTED-<stage>` → resume from `<stage>` (the 15-min cap
+  wrote this; `<stage>` preserves the information the naive
+  `HALTED` marker would have erased — codex round-3 P2). After
+  resume, re-check the wall-clock budget; the second-attempt cap
+  resets fresh.
+- Marker older than 2 hours without `DONE` → treat as stale and
+  restart from `DISCOVER`.
+
+`~/.claude/idle-stage/${SESSION}/` is nightly-pruned by the
+tmuxinator bootstrap (`find ... -mtime +2 -delete`).
 
 ### Stage 1 — DISCOVER
 
@@ -986,8 +1002,18 @@ follow-up work in-band, only clean-ups.
 
   Cross-reference each worktree's branch against
   `gh pr list --author @me --state merged --limit 30 --json headRefName,repository`.
-  Record to the EXECUTE queue; DO NOT remove yet. Skip the session's
-  own worktree (`basename "$PWD"` or `$TMUX_PANE`'s working dir).
+  Record to the EXECUTE queue; DO NOT remove yet.
+
+  **Two exclusions from the queue, not just one:**
+  - Skip the SESSION's own worktree (`basename "$PWD"` /
+    `$TMUX_PANE`'s working dir) — don't remove the tree we're
+    currently standing in.
+  - Skip the repo's PRIMARY worktree (the main clone root). Parse
+    `git worktree list --porcelain` and drop the first entry in
+    each repo — `git worktree remove` refuses to remove the
+    primary anyway, and any "main clone checked out on a merged
+    feature branch" case is already owned by B7 (Telegram
+    escalate, do NOT auto-fix).
 
 - **B4 — `CronList` entries whose PR already merged.**
 
@@ -1042,7 +1068,7 @@ For each queued clean-up:
 - `CronDelete <cron_id>` for merged-PR polling loops.
 
 If ANY clean-up fails, write the error to
-`~/.claude/idle-stage/${TICK}.errors` and continue — a failed remove
+`~/.claude/idle-stage/${SESSION}/${TICK}.errors` and continue — a failed remove
 of a stale worktree must not block the rest of the sweep. At end of
 stage, if the errors file is non-empty, Telegram-reply once with the
 concatenated error output.
@@ -1089,10 +1115,15 @@ path and resume idle waiting.
 ### Termination / escalation
 
 - Wall-clock cap: 15 minutes for Stages 1+2 combined. At cap, write
-  `HALTED` to the marker, record remaining clean-ups to
-  `~/.claude/idle-stage/${TICK}.deferred`, Telegram-reply once with
-  the deferred list, move on. Next tick's idempotency check sees
-  `HALTED` (not `DONE`) and resumes from where it stopped.
+  `HALTED-<stage>` to the marker (where `<stage>` is the stage
+  currently in progress — DISCOVER, EXECUTE, or NOTIFY), record
+  remaining clean-ups to
+  `~/.claude/idle-stage/${SESSION}/${TICK}.deferred`, Telegram-reply
+  once with the deferred list, move on. The `-<stage>` suffix
+  preserves the information a bare `HALTED` would have erased — the
+  idempotency-marker "resume from stage" branch above reads the
+  suffix to know where to pick up, and the EXECUTE queue persisted
+  to `.deferred` is reloadable.
 - If any stage raises an exception, the marker retains its
   last-written stage value; the next tick's resume logic picks up
   there. Repeated failure at the same stage over 3 consecutive ticks
