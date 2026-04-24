@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Deprecation shim. The bash cli was replaced by `dots` in P3.
+# This shim execs `dots` for the verbs dots covers; for `conda` and `agents`
+# it falls through to the original bash dispatch (kept in lib/cli-legacy.sh).
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+case "${1:-}" in
+    conda|agents) exec "${SCRIPT_DIR}/lib/cli-legacy.sh" "$@" ;;
+    *)
+        if ! command -v dots >/dev/null 2>&1; then
+            echo "warning: \`dots\` not on PATH — falling back to legacy bash cli" >&2
+            exec "${SCRIPT_DIR}/lib/cli-legacy.sh" "$@"
+        fi
+        echo "warning: 'cli ${1:-}' is deprecated; use 'dots ${1:-}'" >&2
+        export DOTS_LEGACY_SHIM=1
+        exec dots "$@"
+        ;;
+esac
