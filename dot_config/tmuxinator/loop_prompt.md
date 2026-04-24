@@ -997,10 +997,15 @@ follow-up work in-band, only clean-ups.
         # has a different --json schema without `headRefName`
         # / `body` consistency (codex round-6 P2).
         since=$(date -u -d '7 days ago' +%Y-%m-%d)
+        # gh's -q uses gojq/RE2; no `(?!...)` lookahead, no `s`
+        # flag (codex round-7 P1). Split into two positive tests,
+        # AND the negation of the "none" case. `i` flag is OK.
         gh pr list --state merged --author @me -R "$owner_repo" \
           --search "merged:>=$since" \
           --json number,body \
-          -q '.[] | select(.body | test("Deferred P2s: (?!none)"; "is"))'
+          -q '.[]
+              | select(.body | test("Deferred P2s:"; "i"))
+              | select(.body | test("Deferred P2s: *none"; "i") | not)'
       done
 
   For each PR, parse the `## Pre-PR review` block; for each P2
@@ -1028,10 +1033,10 @@ follow-up work in-band, only clean-ups.
         gh pr list --author @me --state open --draft \
           -R "$owner_repo" \
           --json number,title,body,updatedAt \
-          -q '.[] | select(.body
-                  | test("Pre-PR (behavioural gate|review)"; "is"))
-                  | select(.body | test("FAIL|bypassed|skipped"; "is"))
-                  | select((.updatedAt | fromdateiso8601) < (now - 7200))'
+          -q '.[]
+              | select(.body | test("Pre-PR (behavioural gate|review)"; "i"))
+              | select(.body | test("FAIL|bypassed|skipped"; "i"))
+              | select((.updatedAt | fromdateiso8601) < (now - 7200))'
       done
 
   (Only drafts older than 2h, to avoid racing an in-flight §4b
@@ -1052,47 +1057,46 @@ follow-up work in-band, only clean-ups.
 
 - **B1 — Worktrees whose branch is merged.**
 
-      for r in ~/acap ~/alpha ~/.files ~/tapai; do
-        [ -d "$r" ] || continue
-        git -C "$r" worktree list --porcelain 2>/dev/null
-      done
+  **Session-scoped from the start** — iterate only worktrees whose
+  path contains this session's name. A tree belonging to a sister
+  session must NEVER enter this queue; the previous "just
+  exclude the current worktree" rule was not enough because the
+  loop also walked `~/acap/.claude/worktrees/acap_cc_1`,
+  `~/.files/.claude/worktrees/p2-5-cherrypick-agents`, etc.
+  (codex round-7 P1 — would have deleted sister-session work):
 
-  Cross-reference each worktree's branch against the **per-repo**
-  merged PR list — a single cross-repo `gh pr list` misses branches
-  in non-CWD repos (codex round-4 P2). Use the repo of the
-  worktree itself:
-
+      SESSION=$(basename "$PWD")
       for wt_repo in ~/acap ~/alpha ~/.files ~/tapai; do
         [ -d "$wt_repo" ] || continue
         owner_repo=$(git -C "$wt_repo" remote get-url origin \
           | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')
-        # `gh pr list --search "merged:>=..."` is server-side
-        # filtered so the result isn't hard-capped before the
-        # window gate (codex round-5 P2). gh pr list exposes
-        # headRefName; `gh search prs` does NOT, and requesting
-        # it crashes (codex round-6 P2). 60-day window is
-        # generous — anything older is unlikely to still have a
-        # local worktree.
         since=$(date -u -d '60 days ago' +%Y-%m-%d)
         merged_branches=$(gh pr list --state merged --author @me \
           -R "$owner_repo" --search "merged:>=$since" \
           --json headRefName -q '.[].headRefName')
-        # For each worktree in $wt_repo, emit it if its branch is
-        # in $merged_branches.
+        # Enumerate THIS session's worktrees in this repo only
+        git -C "$wt_repo" worktree list --porcelain 2>/dev/null \
+          | awk -v s="$SESSION" '
+              /^worktree / { wt=$2 }
+              /^branch /   { if (wt ~ s) printf "%s\t%s\n",
+                               wt, substr($2, 12) }'
+        # … filter the resulting <wt-path>\t<branch> pairs by
+        # branch ∈ $merged_branches and enqueue for EXECUTE.
       done
 
   Record to the EXECUTE queue; DO NOT remove yet.
 
-  **Two exclusions from the queue, not just one:**
-  - Skip the SESSION's own worktree (`basename "$PWD"` /
-    `$TMUX_PANE`'s working dir) — don't remove the tree we're
-    currently standing in.
+  **Two additional exclusions on top of the session-scope gate:**
+  - Skip the CURRENT worktree (`basename "$PWD"` matches itself
+    via the wildcard — still belt-and-braces: explicit skip).
   - Skip the repo's PRIMARY worktree (the main clone root). Parse
     `git worktree list --porcelain` and drop the first entry in
     each repo — `git worktree remove` refuses to remove the
     primary anyway, and any "main clone checked out on a merged
     feature branch" case is already owned by B7 (Telegram
-    escalate, do NOT auto-fix).
+    escalate, do NOT auto-fix). Primary worktree paths never
+    contain a session name, so the session-scope gate already
+    rejects them, but keep the explicit skip as a safety net.
 
 - **B4 — `CronList` entries whose PR already merged.**
 
