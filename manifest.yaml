@@ -1,0 +1,60 @@
+# Per-host manifest of chezmoi-managed dotfile entries.
+#
+# `dots manifest show` reads this file (default: $ACAP_DOTFILES_HOME/manifest.yaml)
+# and prints a human-readable or --json view of which target paths each role
+# expects chezmoi to render. P4 (inventory-as-code) will populate this
+# automatically from the per-host inventory + active overlay set; for P3 the
+# starter file below covers the chezmoi-managed paths visible at the time of
+# the dots cutover.
+#
+# Schema:
+#   version: 1                                # bump on breaking schema change
+#   entries:
+#     - path: <chezmoi target path, ~ ok>     # required
+#       role: common | acap | tapai | personal  # default: common
+#
+# Adding new entries: prefer to keep this file alphabetically sorted within
+# each role group so diffs are easy to read.
+version: 1
+entries:
+  # --- common (every host) ---
+  # Paths reflect the actual chezmoi targets: zsh + git are XDG-relocated
+  # (dot_config/zsh/dot_zshrc, dot_config/git/config.tmpl), tmux source is
+  # at dot_config/tmux/tmux.conf (chezmoi treats the leading dir as XDG, not
+  # as a leading dot), and wezterm renders to home root via dot_wezterm.lua.
+  - path: ~/.config/zsh/.zshrc
+    role: common
+  - path: ~/.config/zsh/.zshenv
+    role: common
+  - path: ~/.config/git/config
+    role: common
+  - path: ~/.config/tmux/tmux.conf
+    role: common
+  - path: ~/.config/nvim/init.lua
+    role: common
+  - path: ~/.config/lazygit/config.yml
+    role: common
+  - path: ~/.wezterm.lua
+    role: common
+
+  # --- claude / codex / gemini agent configs (common, deployed by P2.5) ---
+  - path: ~/.claude/CLAUDE.md
+    role: common
+  - path: ~/.claude/settings.json
+    role: common
+  - path: ~/.claude/AGENTS.md
+    role: common
+  - path: ~/.claude/keybindings.json
+    role: common
+  - path: ~/.claude/marketplace.json
+    role: common
+  - path: ~/.claude/plugin.json
+    role: common
+  - path: ~/.codex/AGENTS.md
+    role: common
+  - path: ~/.codex/config.toml
+    role: common
+  - path: ~/.gemini/GEMINI.md
+    role: common
+  - path: ~/.gemini/settings.json
+    role: common

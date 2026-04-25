@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+#
+# cli - Manage dotfiles and conda environments
+#
+# Usage:
+#   cli <command> [options]
+#
+# Commands:
+#   apply       Apply dotfiles from repo to system (lightweight chezmoi apply)
+#   update      Update all installed components (dotfiles, externals, conda, tools)
+#   backup      Capture live system changes back into the repo
+#   restore     Apply dotfiles from repo to system (installs prereqs if needed)
+#   conda       Manage conda environments (build, nuke, rollback, status)
+#   status      Show current installation status
+#   help        Show this help message
+#
+# Examples:
+#   cli apply                # Quick chezmoi apply (dotfiles only)
+#   cli update               # Update dotfiles, externals, conda, tools, agents
+#   cli backup               # Re-add changed files from system to repo
+#   cli restore              # Apply dotfiles + install prereqs if needed
+#   cli restore --force      # Clean-slate reinstall
+#   cli conda build          # Build new env, validate, swap prod symlink
+#   cli conda status         # Show current prod env and available envs
+#   cli conda rollback       # Revert prod to previous env
+#   cli conda nuke           # Destroy all envs and rebuild
+#   cli status               # Check what's installed
+#
+# Environment Variables:
+#   CHEZMOI_REPO    Override the GitHub repo (default: MrPeterLee/dotfiles)
+#   DOTFILES_DEBUG  Set to 1 for verbose output
+#
+set -Eeuo pipefail
+
+# Configuration
+REPO="${CHEZMOI_REPO:-MrPeterLee/dotfiles}"
+# Script lives at lib/cli-legacy.sh (moved from repo-root cli in P3 T1.5).
+# All sourced paths below are written as ${SCRIPT_DIR}/lib/<x>.sh, so
+# SCRIPT_DIR must point at the repo root, not the lib/ dir this file lives in.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CHEZMOI_BIN="${HOME}/.local/bin/chezmoi"
+CHEZMOI_SOURCE="${HOME}/.local/share/chezmoi"
+CHEZMOI_CONFIG_DIR="${HOME}/.config/chezmoi"
+
+# Source shared libraries
+source "${SCRIPT_DIR}/lib/common.sh"
+
+cmd_help() {
+    cat <<'EOF'
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │                     DOTFILES CLI                            │
+  │                                                             │
+  │  Manage your dotfiles with chezmoi                          │
+  └─────────────────────────────────────────────────────────────┘
+
+  USAGE:
+      cli <command> [options]
+
+  COMMANDS:
+      apply         Apply dotfiles (lightweight chezmoi apply)
+      update        Update all installed components
+      backup        Capture live system changes back into the repo
+      restore       Apply dotfiles from repo to system (installs prereqs)
+      conda         Manage conda environments
+      status        Show installation status
+      help          Show this help message
+
+  CONDA SUBCOMMANDS:
+      conda build          Build new timestamped env, validate, swap prod symlink
+      conda status         Show current prod env and available environments
+      conda rollback       Revert prod symlink to previous environment
+      conda nuke           Destroy all envs and rebuild from scratch
+      conda install-timer  Install systemd timer for weekly auto-rebuild
+
+  RESTORE OPTIONS:
+      --force       Clean-slate reinstall (wipe chezmoi state + external deps)
+
+  QUICK START:
+
+      # On a fresh machine:
+      git clone https://github.com/MrPeterLee/dotfiles.git ~/.files
+      cd ~/.files
+      ./cli restore
+
+      # Something broke? Start fresh:
+      ./cli restore --force
+
+  COMMON WORKFLOWS:
+
+      # Apply dotfiles (quick)
+      $ cli apply
+
+      # Update everything (dotfiles + externals + conda + agents)
+      $ cli update
+
+      # Capture system changes into repo
+      $ cli backup
+      $ git diff
+      $ git commit -am "chore: sync dotfiles"
+      $ git push
+
+      # Full install on a fresh machine
+      $ cli restore
+
+      # See what chezmoi would change
+      $ chezmoi diff
+
+  ENVIRONMENT VARIABLES:
+      CHEZMOI_REPO     Override GitHub repo (default: MrPeterLee/dotfiles)
+      DOTFILES_DEBUG   Set to 1 for verbose output
+
+  PLATFORM SUPPORT:
+      - Linux: Ubuntu/Debian (apt), Fedora/RHEL (dnf), Amazon Linux (dnf/yum),
+               Arch (pacman), openSUSE (zypper)
+      - macOS: Homebrew (auto-installed if missing)
+      - Windows: WSL (uses Linux package manager)
+
+  KEYBOARD LAYOUT:
+      This config uses Graphite (not QWERTY):
+      y=left  h=down  a=up  e=right  j=end-of-word  l=append  '=yank
+
+  MORE INFO:
+      https://github.com/MrPeterLee/dotfiles
+      https://www.chezmoi.io/
+
+EOF
+}
+
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    case "$cmd" in
+        apply)
+            source "${SCRIPT_DIR}/lib/apply.sh"
+            cmd_apply "$@"
+            ;;
+        update)
+            source "${SCRIPT_DIR}/lib/update.sh"
+            cmd_update "$@"
+            ;;
+        backup)
+            source "${SCRIPT_DIR}/lib/backup.sh"
+            cmd_backup "$@"
+            ;;
+        restore)
+            source "${SCRIPT_DIR}/lib/restore.sh"
+            cmd_restore "$@"
+            ;;
+        conda)
+            source "${SCRIPT_DIR}/lib/conda.sh"
+            cmd_conda "$@"
+            ;;
+        status)
+            source "${SCRIPT_DIR}/lib/status.sh"
+            cmd_status "$@"
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        agents)
+            sub="${1:-help}"
+            shift || true
+            case "$sub" in
+                apply|backup|restore|update|diff|status)
+                    source "${SCRIPT_DIR}/lib/agents/common.sh"
+                    source "${SCRIPT_DIR}/lib/agents/${sub}.sh"
+                    "cmd_${sub}" "$@"
+                    ;;
+                help|*)
+                    cat <<'AGENTS_HELP'
+Usage: ./cli agents <subcommand> [args...]
+
+Subcommands:
+  apply    Apply agent configs (claude/codex/opencode/gemini) via chezmoi
+  backup   Capture live ~/.claude state into source via chezmoi re-add
+  restore  Full agent setup from scratch (1Password CLI, agent CLIs, MCP)
+  update   Update agent configs from repo
+  diff     Preview chezmoi changes for agent configs
+  status   Show agent CLI install + config status
+AGENTS_HELP
+                    ;;
+            esac
+            ;;
+        *)
+            error "Unknown command: $cmd"
+            echo ""
+            echo "Run 'cli help' for usage."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

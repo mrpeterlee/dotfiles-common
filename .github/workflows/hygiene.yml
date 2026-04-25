@@ -30,6 +30,12 @@ jobs:
         run: ./tests/hygiene/test_no_agents_refs.sh
       - name: Chezmoiignore target-path form
         run: ./tests/hygiene/test_chezmoiignore_target_paths.sh
+      - name: Python CLI unit tests
+        working-directory: python
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          ~/.local/bin/uv pip install --system -e ".[dev]"
+          ~/.local/bin/uv run pytest -q tests/unit/
 
   render-matrix:
     name: Chezmoi render (${{ matrix.os }})
