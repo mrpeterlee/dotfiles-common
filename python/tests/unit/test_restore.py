@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from tests.conftest import CHEZMOI_BIN, CHEZMOI_BIN_ARGV
 
 from acap_dotfiles.cli import main
 
@@ -18,7 +19,7 @@ def test_restore_with_tty_invokes_init_then_apply_without_force(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -31,7 +32,7 @@ def test_restore_with_tty_invokes_init_then_apply_without_force(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -45,7 +46,7 @@ def test_restore_with_tty_invokes_init_then_apply_without_force(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=True),
     ):
@@ -60,7 +61,7 @@ def test_restore_force_flag_passes_force_to_apply(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -73,7 +74,7 @@ def test_restore_force_flag_passes_force_to_apply(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -88,7 +89,7 @@ def test_restore_force_flag_passes_force_to_apply(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=True),
     ):
@@ -106,7 +107,7 @@ def test_restore_non_tty_auto_injects_force_and_writes_stub(
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -119,7 +120,7 @@ def test_restore_non_tty_auto_injects_force_and_writes_stub(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -134,7 +135,7 @@ def test_restore_non_tty_auto_injects_force_and_writes_stub(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=False),
     ):
@@ -164,7 +165,7 @@ def test_restore_dry_run_passes_dry_run_to_chezmoi(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -178,7 +179,7 @@ def test_restore_dry_run_passes_dry_run_to_chezmoi(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -193,7 +194,7 @@ def test_restore_dry_run_passes_dry_run_to_chezmoi(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=True),
     ):
@@ -219,7 +220,7 @@ def test_restore_stub_chezmoi_toml_contains_required_keys(
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -232,7 +233,7 @@ def test_restore_stub_chezmoi_toml_contains_required_keys(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -247,7 +248,7 @@ def test_restore_stub_chezmoi_toml_contains_required_keys(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=False),
     ):
@@ -297,7 +298,7 @@ def test_restore_non_tty_skips_init_when_stub_written(
     # Note: NO init registration. If init runs, pytest-subprocess raises.
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -312,7 +313,7 @@ def test_restore_non_tty_skips_init_when_stub_written(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=False),
     ):
@@ -344,7 +345,7 @@ def test_restore_custom_acap_dotfiles_home_overrides_source(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(custom_home))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -357,7 +358,7 @@ def test_restore_custom_acap_dotfiles_home_overrides_source(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -371,7 +372,7 @@ def test_restore_custom_acap_dotfiles_home_overrides_source(
     with (
         patch(
             "acap_dotfiles.commands.restore.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.restore._is_tty", return_value=True),
     ):

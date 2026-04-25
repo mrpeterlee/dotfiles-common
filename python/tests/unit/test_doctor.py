@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
+from tests.conftest import CHEZMOI_BIN
 
 from acap_dotfiles.cli import main
 
@@ -15,7 +16,7 @@ def test_doctor_passes_when_all_checks_green(
     with (
         patch(
             "acap_dotfiles.commands.doctor.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.doctor._has_op", return_value=True),
         patch(
@@ -36,7 +37,7 @@ def test_doctor_fails_on_missing_chezmoi_source(
     with (
         patch(
             "acap_dotfiles.commands.doctor.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.doctor._has_op", return_value=True),
         patch(
@@ -55,7 +56,7 @@ def test_doctor_warns_when_op_missing(tmp_path: Path, monkeypatch: pytest.Monkey
     with (
         patch(
             "acap_dotfiles.commands.doctor.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch("acap_dotfiles.commands.doctor._has_op", return_value=False),
         patch(
