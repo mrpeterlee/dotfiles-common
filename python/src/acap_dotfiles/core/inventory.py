@@ -70,6 +70,41 @@ class TunnelMonitor(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class LegacyAliasOverride(BaseModel):
+    """Per-alias SSH override for legacy bookmarks needing different params than canonical.
+
+    P4.5 T4 (Option B): some legacy SSH bookmark names point at the SAME
+    physical host as a canonical entry but need DIFFERENT connection params —
+    e.g. ``oracle-a`` / ``oracle-b`` / ``acap-reality-1`` / ``acap-jp-1``,
+    where the alias historically used a different user, identity key, port,
+    or ProxyJump than the canonical name now does.
+
+    This is the richer counterpart to ``Host.legacy_aliases`` (Option A from
+    the round-3 design tradeoff), which assumes the alias shares the
+    canonical's connection params and only varies the bookmark name.
+
+    Each entry renders as its own ``Host`` stanza in ``render_ssh_config``
+    with the override-specified params. ``addr`` is mandatory — the alias may
+    resolve to a different hostname/IP than the canonical (e.g. a separate
+    DNS record kept around for muscle memory).
+    """
+
+    name: str  # bookmark name — e.g. "oracle-a"
+    addr: str  # hostname/IP this alias resolves to (may differ from canonical)
+    port: int = 22
+    user: str | None = None
+    identity: str | None = None  # key NAME (rendered as ~/.ssh/<name>)
+    proxy_jump: str | None = None
+    note: str | None = None  # free-form operator notes (not rendered)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @property
+    def identity_file(self) -> str | None:
+        """Map ``identity`` (key name) to ``~/.ssh/<name>`` path for OpenSSH config."""
+        return f"~/.ssh/{self.identity}" if self.identity else None
+
+
 class Host(BaseModel):
     """Canonical per-host model. Loaded from ``inventory/hosts/<name>.yml``."""
 
@@ -82,8 +117,8 @@ class Host(BaseModel):
         default_factory=list,
         description=(
             "Historical names this host has had. NOT rendered by "
-            "render_ssh_config — use legacy_aliases for that. May be "
-            "deprecated in a future schema_version bump."
+            "render_ssh_config — use legacy_aliases / alias_overrides for "
+            "that. May be deprecated in a future schema_version bump."
         ),
     )
 
@@ -98,16 +133,21 @@ class Host(BaseModel):
     roles: list[str] = Field(default_factory=list)  # e.g. [trading, vm_host, ...]
     groups: list[str] = Field(default_factory=list)  # e.g. [tailscale_nodes, sg, ...]
 
-    # P4 T11: legacy SSH bookmark names that must keep resolving with the
-    # canonical host's connection params during the rename window. Each entry
-    # gets emitted as a SEPARATE Host stanza in render_ssh_config so muscle-memory
-    # `ssh sg-prod-1` keeps working after the canonical name moves to
-    # `acap-sg-prod-1`. This is distinct from `hostnames[]` (which historically
-    # documented all names a host has had — and may include names that need
-    # DIFFERENT user/key/port than the canonical, e.g. oracle-a/oracle-b/
-    # acap-admin pre-rename). Use `legacy_aliases` ONLY for aliases that share
-    # the canonical host's SSH params.
+    # P4 T11 (Option A): legacy SSH bookmark names that must keep resolving
+    # with the canonical host's connection params during the rename window.
+    # Each entry gets emitted as a SEPARATE Host stanza in render_ssh_config
+    # so muscle-memory `ssh sg-prod-1` keeps working after the canonical name
+    # moves to `acap-sg-prod-1`. Use ONLY for aliases that share the canonical
+    # host's SSH params; for aliases needing different user/key/port/ProxyJump
+    # use ``alias_overrides`` (Option B) below.
     legacy_aliases: list[str] = Field(default_factory=list)
+
+    # P4.5 T4 (Option B): per-alias SSH overrides for legacy bookmarks that
+    # need DIFFERENT connection params than the canonical host (e.g.
+    # ``oracle-a`` / ``oracle-b`` / ``acap-reality-1`` / ``acap-jp-1``).
+    # Each entry renders as its own Host stanza with the override-specified
+    # user/key/port/ProxyJump rather than the canonical's.
+    alias_overrides: list[LegacyAliasOverride] = Field(default_factory=list)
 
     # P4 namespaced sub-maps — each consumer reads only its own key.
     headscale: Headscale | None = None
@@ -224,14 +264,17 @@ def render_ssh_config(hosts: list[Host], role_filter: str | None = None) -> str:
     different params without breaking SSH config — and so per-alias
     matching in tools like ``ssh -G alias`` stays unambiguous.
 
-    ``hostnames[]`` is treated as historical-documentation only: those names
-    may need DIFFERENT user/key/port/ProxyJump than the canonical (e.g.
-    pre-P4-rename ``oracle-a``/``oracle-b``/``acap-admin`` that legacy SSH
-    fragments still service with their own user/identity), so this renderer
-    deliberately ignores it. A later cleanup may either (a) merge the safe
-    subset of ``hostnames[]`` into ``legacy_aliases[]``, or (b) drop the field
-    entirely. Whichever wins, the change is mechanical once the rename window
-    closes.
+    P4.5 T4 (Option B): each entry in ``alias_overrides[]`` is also emitted
+    as a SEPARATE ``Host`` stanza, but with the override-specified
+    HostName/Port/User/IdentityFile/ProxyJump rather than the canonical's.
+    The block is preceded by a comment marking it as an Option B alias so
+    operators can spot params that diverge from the canonical at a glance.
+
+    ``hostnames[]`` is treated as historical-documentation only and the
+    renderer deliberately ignores it. A later cleanup may either (a) migrate
+    the safe subset into ``legacy_aliases[]`` / ``alias_overrides[]``, or
+    (b) drop the field entirely. Whichever wins, the change is mechanical
+    once the rename window closes.
     """
     lines = [
         "# AUTO-GENERATED by `dots ssh render` — do not edit.",
@@ -267,5 +310,20 @@ def render_ssh_config(hosts: list[Host], role_filter: str | None = None) -> str:
                 lines.append(f"    IdentityFile {h.identity_file}")
             if h.ssh.proxy_jump:
                 lines.append(f"    ProxyJump {h.ssh.proxy_jump}")
+            lines.append("")
+        # P4.5 T4 — one stanza per Option B alias, each with its OWN
+        # connection params (may diverge from the canonical's).
+        for override in h.alias_overrides:
+            lines.append(f"# Option B alias for {h.name} — distinct connection params")
+            lines.append(f"Host {override.name}")
+            lines.append(f"    HostName {override.addr}")
+            if override.port != 22:
+                lines.append(f"    Port {override.port}")
+            if override.user:
+                lines.append(f"    User {override.user}")
+            if override.identity_file:
+                lines.append(f"    IdentityFile {override.identity_file}")
+            if override.proxy_jump:
+                lines.append(f"    ProxyJump {override.proxy_jump}")
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
