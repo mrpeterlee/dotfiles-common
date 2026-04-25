@@ -355,30 +355,16 @@ def test_render_emits_proxy_jump() -> None:
     assert "    ProxyJump bastion.example.com" in out
 
 
+@pytest.mark.skip(
+    reason=(
+        "Round-2 multi-host alias rendering reverted by round-3 P1. "
+        "Aliases like oracle-a/oracle-b/acap-admin in the existing "
+        "inventory need DIFFERENT user/key/port/ProxyJump than the "
+        "canonical host — folding them into one Host block forces them "
+        "to share SSH params and breaks `ssh oracle-a`. Re-enable when "
+        "T11 lands a richer alias model (Option A: legacy_aliases[] "
+        "field for same-params aliases; Option B: per-alias overrides)."
+    )
+)
 def test_render_emits_legacy_hostname_aliases() -> None:
-    """``hostnames[]`` must merge into the OpenSSH multi-host ``Host`` line.
-
-    Codex round-2 P1 (from plan reviewer): without this, T11's legacy-bookmark
-    preservation breaks during the rename window — e.g. ``ssh sg-prod-1`` would
-    no longer match the rendered config because only ``Host acap-sg-prod-1``
-    is emitted.
-    """
-    h = Host(
-        name="acap-sg-prod-1",
-        hostnames=["sg-prod-1"],
-        addresses={"lan": "10.1.1.100"},  # type: ignore[arg-type]
-    )
-    out = render_ssh_config([h])
-    assert "Host acap-sg-prod-1 sg-prod-1" in out
-    # multi-alias case: both aliases on the same Host line
-    h2 = Host(
-        name="acap-sg-prod-1",
-        hostnames=["sg-prod-1", "sg1"],
-        addresses={"lan": "10.1.1.100"},  # type: ignore[arg-type]
-    )
-    out2 = render_ssh_config([h2])
-    assert "Host acap-sg-prod-1 sg-prod-1 sg1" in out2
-    # zero-aliases case is unchanged: just ``Host <name>``
-    h3 = Host(name="solo", addresses={"public": "1.1.1.1"})  # type: ignore[arg-type]
-    out3 = render_ssh_config([h3])
-    assert "Host solo\n" in out3
+    """Documented-skip placeholder — see skip reason for rationale."""
