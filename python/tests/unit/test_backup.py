@@ -6,13 +6,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from tests.conftest import CHEZMOI_BIN, CHEZMOI_BIN_ARGV
 
 from acap_dotfiles.cli import main
 
 
 def _re_add_argv(tmp_path: Path) -> list[str]:
     return [
-        "/usr/bin/chezmoi",
+        CHEZMOI_BIN_ARGV,
         "--no-tty",
         "--no-pager",
         "--color=off",
@@ -31,7 +32,7 @@ def test_backup_runs_re_add_then_prints_changed_files(
     with (
         patch(
             "acap_dotfiles.commands.backup.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch(
             "acap_dotfiles.commands.backup.status_porcelain",
@@ -53,7 +54,7 @@ def test_backup_no_changes_prints_no_op_message(
     with (
         patch(
             "acap_dotfiles.commands.backup.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch(
             "acap_dotfiles.commands.backup.status_porcelain",
@@ -76,7 +77,7 @@ def test_backup_re_add_failure_exits_nonzero(
     )
     with patch(
         "acap_dotfiles.commands.backup.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["backup"])
     assert result.exit_code != 0
@@ -96,7 +97,7 @@ def test_backup_next_step_hint_uses_cfg_home(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(custom_home))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -110,7 +111,7 @@ def test_backup_next_step_hint_uses_cfg_home(
     with (
         patch(
             "acap_dotfiles.commands.backup.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch(
             "acap_dotfiles.commands.backup.status_porcelain",
@@ -133,7 +134,7 @@ def test_backup_git_diff_failure_exits_2(
     with (
         patch(
             "acap_dotfiles.commands.backup.discover_binary",
-            return_value=Path("/usr/bin/chezmoi"),
+            return_value=CHEZMOI_BIN,
         ),
         patch(
             "acap_dotfiles.commands.backup.status_porcelain",

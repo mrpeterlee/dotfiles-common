@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from tests.conftest import CHEZMOI_BIN, CHEZMOI_BIN_ARGV
 
 from acap_dotfiles.cli import main
 
@@ -16,7 +17,7 @@ def test_update_runs_apply_then_refresh_externals(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -28,7 +29,7 @@ def test_update_runs_apply_then_refresh_externals(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -41,7 +42,7 @@ def test_update_runs_apply_then_refresh_externals(
     )
     with patch(
         "acap_dotfiles.commands.update.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["update"])
     assert result.exit_code == 0
@@ -53,7 +54,7 @@ def test_update_apply_failure_aborts(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -67,7 +68,7 @@ def test_update_apply_failure_aborts(
     )
     with patch(
         "acap_dotfiles.commands.update.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["update"])
     assert result.exit_code != 0
@@ -79,7 +80,7 @@ def test_update_refresh_externals_failure_warns_but_succeeds(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -91,7 +92,7 @@ def test_update_refresh_externals_failure_warns_but_succeeds(
     )
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -106,7 +107,7 @@ def test_update_refresh_externals_failure_warns_but_succeeds(
     )
     with patch(
         "acap_dotfiles.commands.update.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["update"])
     assert result.exit_code == 0  # refresh-externals failure is best-effort

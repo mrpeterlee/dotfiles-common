@@ -1,8 +1,8 @@
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
+from tests.conftest import CHEZMOI_BIN, CHEZMOI_BIN_ARGV
 
 from acap_dotfiles.cli import main
 
@@ -10,7 +10,7 @@ from acap_dotfiles.cli import main
 def test_status_runs_chezmoi_managed_and_prints_count(fake_process: object) -> None:
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -22,7 +22,7 @@ def test_status_runs_chezmoi_managed_and_prints_count(fake_process: object) -> N
     )
     with patch(
         "acap_dotfiles.commands.status.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["status"])
     assert result.exit_code == 0

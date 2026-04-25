@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from tests.conftest import CHEZMOI_BIN, CHEZMOI_BIN_ARGV
 
 from acap_dotfiles.cli import main
 
@@ -16,7 +17,7 @@ def test_apply_invokes_chezmoi_apply_with_source(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -29,7 +30,7 @@ def test_apply_invokes_chezmoi_apply_with_source(
     )
     with patch(
         "acap_dotfiles.commands.apply.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["apply"])
     assert result.exit_code == 0
@@ -41,7 +42,7 @@ def test_apply_dry_run_propagates(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -55,7 +56,7 @@ def test_apply_dry_run_propagates(
     )
     with patch(
         "acap_dotfiles.commands.apply.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["--dry-run", "apply"])
     assert result.exit_code == 0
@@ -67,7 +68,7 @@ def test_apply_forwards_extra_args_verbatim(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -82,7 +83,7 @@ def test_apply_forwards_extra_args_verbatim(
     )
     with patch(
         "acap_dotfiles.commands.apply.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["apply", "--", "--include=executable", "~/.local/bin"])
     assert result.exit_code == 0
@@ -94,7 +95,7 @@ def test_apply_propagates_chezmoi_nonzero_exit(
     monkeypatch.setenv("ACAP_DOTFILES_HOME", str(tmp_path))  # type: ignore[attr-defined]
     fake_process.register(  # type: ignore[attr-defined]
         [
-            "/usr/bin/chezmoi",
+            CHEZMOI_BIN_ARGV,
             "--no-tty",
             "--no-pager",
             "--color=off",
@@ -108,7 +109,7 @@ def test_apply_propagates_chezmoi_nonzero_exit(
     )
     with patch(
         "acap_dotfiles.commands.apply.discover_binary",
-        return_value=Path("/usr/bin/chezmoi"),
+        return_value=CHEZMOI_BIN,
     ):
         result = CliRunner().invoke(main, ["apply"])
     assert result.exit_code != 0
