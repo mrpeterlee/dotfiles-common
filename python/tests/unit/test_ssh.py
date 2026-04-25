@@ -7,9 +7,26 @@ from acap_dotfiles.cli import main
 
 
 def _seed_inventory(inv: Path) -> None:
+    """Seed a tmp inventory with two nested-schema hosts.
+
+    The P4 nested schema replaces the P3 flat ``addr/port/user`` keys with
+    ``addresses.{public,lan,private,tailscale}`` + ``ssh.{port,user,...}`` +
+    a ``groups[]`` list that drives the derived ``role`` property
+    (``tailscale_nodes`` → ``acap``).
+    """
     inv.mkdir(parents=True, exist_ok=True)
-    (inv / "alpha.yaml").write_text("name: alpha\naddr: 10.0.0.1\nuser: peter\nrole: acap\n")
-    (inv / "beta.yaml").write_text("name: beta\naddr: 10.0.0.2\nport: 2222\nrole: personal\n")
+    (inv / "alpha.yaml").write_text(
+        "name: alpha\n"
+        "addresses:\n"
+        "  public: 10.0.0.1\n"
+        "ssh:\n"
+        "  user: peter\n"
+        "groups: [tailscale_nodes]\n"  # → role=acap
+    )
+    (inv / "beta.yaml").write_text(
+        "name: beta\naddresses:\n  public: 10.0.0.2\nssh:\n  port: 2222\n"
+        # no groups → role=personal
+    )
 
 
 def test_ssh_render_uses_default_inventory_under_home(
