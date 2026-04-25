@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import tomllib
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -376,3 +377,98 @@ def test_restore_custom_acap_dotfiles_home_overrides_source(
     ):
         result = CliRunner().invoke(main, ["restore"])
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# PR #20 deferred P2 regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_stub_chezmoi_toml_windows_path_produces_valid_toml() -> None:
+    """PR #20 deferred P2 #1: Windows `sourceDir` must round-trip through tomllib.
+
+    Raw backslashes in a TOML basic-string trigger escape processing
+    (`\\U` → unicode escape, `\\n` → newline). Before the fix, a path like
+    `C:\\Users\\me\\.files` produced invalid TOML that either failed to
+    parse or silently mangled the path. Regression test: the serialized
+    stub must parse cleanly AND the parsed `sourceDir` must equal the
+    input string character-for-character.
+    """
+    from acap_dotfiles.commands.restore import _stub_chezmoi_toml
+
+    win_path = PureWindowsPath(r"C:\Users\me\.files")
+    content = _stub_chezmoi_toml(win_path)  # type: ignore[arg-type]
+    parsed = tomllib.loads(content)
+    assert parsed["sourceDir"] == str(win_path)
+
+
+def test_stub_chezmoi_toml_path_with_quotes_produces_valid_toml(
+    tmp_path: Path,
+) -> None:
+    """Edge case alongside P2 #1: literal double-quotes in a path must not
+    break TOML parsing either (basic-string escape handling)."""
+    from acap_dotfiles.commands.restore import _stub_chezmoi_toml
+
+    weird_path = tmp_path / 'dir"with"quotes'
+    weird_path.mkdir()
+    content = _stub_chezmoi_toml(weird_path)
+    parsed = tomllib.loads(content)
+    assert parsed["sourceDir"] == str(weird_path)
+
+
+def test_platform_data_detects_wsl_from_proc_version(monkeypatch: object, tmp_path: Path) -> None:
+    """PR #20 deferred P2 #2: WSL hosts must report `isWSL=True`.
+
+    Repo templates gate on `(.isLinux and not .isWSL)` — e.g.
+    `run_once_after_52-setup-zsh.sh.tmpl` which only runs on native Linux.
+    Without WSL detection, WSL hosts running `dots restore` non-interactively
+    hit the native-linux-only branch and try to modify `/etc/zsh/zshenv`.
+    Fix: read `/proc/version`, match `Microsoft` / `WSL` case-insensitively.
+    """
+    from acap_dotfiles.commands import restore as restore_module
+
+    proc_version = tmp_path / "version"
+    proc_version.write_text("Linux version 5.15.153.1-microsoft-standard-WSL2 (x86_64)\n")
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module, "_PROC_VERSION_PATH", proc_version
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module._platform, "system", lambda: "Linux"
+    )
+    data = restore_module._platform_data()
+    assert data["isWSL"] is True
+    assert data["isLinux"] is True
+
+
+def test_platform_data_native_linux_keeps_wsl_false(monkeypatch: object, tmp_path: Path) -> None:
+    """Negative case: native Linux kernel must NOT be flagged as WSL."""
+    from acap_dotfiles.commands import restore as restore_module
+
+    proc_version = tmp_path / "version"
+    proc_version.write_text("Linux version 6.8.0-51-generic (buildd@lcy02-amd64-071)\n")
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module, "_PROC_VERSION_PATH", proc_version
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module._platform, "system", lambda: "Linux"
+    )
+    data = restore_module._platform_data()
+    assert data["isWSL"] is False
+
+
+def test_platform_data_wsl_detection_tolerates_missing_proc_version(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    """Non-Linux hosts (macOS, Windows) have no `/proc/version`; the detector
+    must fall back to `isWSL=False` without raising."""
+    from acap_dotfiles.commands import restore as restore_module
+
+    missing = tmp_path / "nope"  # not created
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module, "_PROC_VERSION_PATH", missing
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module._platform, "system", lambda: "Darwin"
+    )
+    data = restore_module._platform_data()
+    assert data["isWSL"] is False
