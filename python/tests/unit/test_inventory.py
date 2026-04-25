@@ -109,22 +109,22 @@ def test_render_ssh_config_role_filter_excludes_other_roles(tmp_path: Path) -> N
 
 def test_load_host_with_namespaced_submaps(tmp_path: Path) -> None:
     """Full nested-schema host with all P4 sub-maps populated."""
-    yaml_file = tmp_path / "acap-sg-prod-1.yaml"
+    yaml_file = tmp_path / "host-1.yaml"
     yaml_file.write_text(
         """
 schema_version: 1
-name: acap-sg-prod-1
-fqdn: sg-prod-1.acap.cc
+name: example-host-1
+fqdn: host-1.example.com
 hostnames:
-  - sg-prod-1
+  - host-1
 addresses:
-  public: sg-prod-1.acap.cc
-  lan: 10.1.1.100
+  public: host-1.example.com
+  lan: 10.0.0.100
   tailscale: 100.64.0.2
 ssh:
   port: 55555
   user: peter
-  identity: peter_acap
+  identity: example_key
   proxy_jump: null
 provider: bare-metal
 region: sg
@@ -132,14 +132,14 @@ role_tag: prod
 roles: [trading, github_runner]
 groups: [bare_metal, trading_servers, sg, tailscale_nodes]
 headscale:
-  tags: ["tag:acap", "tag:bare-metal"]
-  routes: ["10.1.1.0/24"]
+  tags: ["tag:example", "tag:bare-metal"]
+  routes: ["10.0.0.0/24"]
 tunnel_monitor:
   role: relay
-  port_txt_fqdn: r1.tunnel.acap.cc
+  port_txt_fqdn: r1.tunnel.example.com
 ansible:
   extra_vars:
-    alloy_loki_endpoint: https://loki.acap.cc
+    alloy_loki_endpoint: https://loki.example.com
 """
     )
     hosts = load_hosts(tmp_path)
@@ -147,26 +147,26 @@ ansible:
     h = hosts[0]
     assert h.schema_version == 1
     # Nested schema accessors
-    assert h.addresses.lan == "10.1.1.100"
-    assert h.addresses.public == "sg-prod-1.acap.cc"
+    assert h.addresses.lan == "10.0.0.100"
+    assert h.addresses.public == "host-1.example.com"
     assert h.addresses.tailscale == "100.64.0.2"
     assert h.ssh.port == 55555
     assert h.ssh.user == "peter"
-    assert h.ssh.identity == "peter_acap"
+    assert h.ssh.identity == "example_key"
     # P3 backward-compat properties
-    assert h.addr == "10.1.1.100"  # lan wins
+    assert h.addr == "10.0.0.100"  # lan wins
     assert h.port == 55555
     assert h.user == "peter"
-    assert h.identity_file == "~/.ssh/peter_acap"
+    assert h.identity_file == "~/.ssh/example_key"
     assert h.role == "acap"  # derived from groups (tailscale_nodes)
     # P4 namespaced sub-maps
     assert isinstance(h.headscale, Headscale)
-    assert h.headscale.tags == ["tag:acap", "tag:bare-metal"]
-    assert h.headscale.routes == ["10.1.1.0/24"]
+    assert h.headscale.tags == ["tag:example", "tag:bare-metal"]
+    assert h.headscale.routes == ["10.0.0.0/24"]
     assert isinstance(h.tunnel_monitor, TunnelMonitor)
     assert h.tunnel_monitor.role == "relay"
-    assert h.tunnel_monitor.port_txt_fqdn == "r1.tunnel.acap.cc"
-    assert h.ansible == {"extra_vars": {"alloy_loki_endpoint": "https://loki.acap.cc"}}
+    assert h.tunnel_monitor.port_txt_fqdn == "r1.tunnel.example.com"
+    assert h.ansible == {"extra_vars": {"alloy_loki_endpoint": "https://loki.example.com"}}
 
 
 def test_load_host_without_submaps(tmp_path: Path) -> None:
@@ -281,14 +281,16 @@ def test_load_real_inventory_files() -> None:
         pytest.skip("acap inventory not checked out at /home/peter/acap")
     hosts = load_hosts(real_dir)
     assert len(hosts) >= 6, f"expected at least 6 host files, got {len(hosts)}"
-    # Spot-check a known host
-    by_name = {h.name: h for h in hosts}
-    assert "acap-sg-prod-1" in by_name, sorted(by_name)
-    sg = by_name["acap-sg-prod-1"]
-    assert sg.addr == "10.1.1.100"
-    assert sg.port == 55555
-    assert sg.user == "peter"
-    assert sg.role == "acap"
+    # Spot-check that loader returns valid Host objects with shape-not-content
+    # assertions. Asserting on literal addresses / hostnames couples this open
+    # repo to the private inventory's plaintext, which the Hygiene gate's
+    # banned-pattern list rejects. The smoke value is "every host file parses
+    # and yields a populated Host"; specific values belong in the closed repo.
+    assert all(h.name and isinstance(h.name, str) for h in hosts)
+    assert all(h.port and h.port > 0 for h in hosts)
+    assert all(h.user for h in hosts)
+    assert all(h.role in {"acap", "tapai", "personal"} for h in hosts)
+    assert all(h.addr for h in hosts)  # every host has a non-empty resolved address
 
 
 # ----------------------------------------------------------------------
