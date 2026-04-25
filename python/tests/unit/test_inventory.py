@@ -289,3 +289,96 @@ def test_load_real_inventory_files() -> None:
     assert sg.port == 55555
     assert sg.user == "peter"
     assert sg.role == "acap"
+
+
+# ----------------------------------------------------------------------
+# P4 codex round-2 regressions
+# ----------------------------------------------------------------------
+
+
+def test_role_picks_acap_from_canonical_hostname_when_groups_lack_tailscale() -> None:
+    """Hosts like ``acap-jp-ingress-1`` (groups = [tunnel_servers, reality_ingress, jp])
+    must classify as ``acap`` even though no group starts with ``acap`` and
+    ``tailscale_nodes`` is absent. Codex round-2 P1.
+    """
+    h = Host(
+        name="acap-jp-ingress-1",
+        addresses={"public": "202.182.115.158"},  # type: ignore[arg-type]
+        groups=["tunnel_servers", "reality_ingress", "jp"],
+    )
+    assert h.role == "acap"
+
+
+def test_role_picks_tapai_from_canonical_hostname() -> None:
+    """``tapai-`` prefix → ``tapai`` even when ``groups[]`` carries no tapai-* hint."""
+    h = Host(
+        name="tapai-sg-admin-1",
+        addresses={"public": "1.2.3.4"},  # type: ignore[arg-type]
+        groups=["admin", "sg"],
+    )
+    assert h.role == "tapai"
+
+
+def test_load_real_inventory_files_all_acap() -> None:
+    """All 7 ``acap-*.yml`` files in the real inventory must classify as ``acap``.
+
+    This is the regression guard for the codex round-2 P1: previously
+    ``acap-jp-ingress-1`` / ``acap-sg-egress-1`` / ``acap-sg-ingress-{1,2}``
+    fell through to ``personal`` because their ``groups[]`` lacks
+    ``tailscale_nodes`` and any ``acap*`` prefix.
+    """
+    real_dir = Path("/home/peter/acap/inventory/hosts")
+    if not real_dir.is_dir():
+        pytest.skip("acap inventory not checked out at /home/peter/acap")
+    hosts = load_hosts(real_dir)
+    acap_named = [h for h in hosts if h.name.startswith("acap-") or h.name == "acap"]
+    assert len(acap_named) >= 7, f"expected ≥7 acap-* hosts, got {len(acap_named)}"
+    misclassified = [h.name for h in acap_named if h.role != "acap"]
+    assert misclassified == [], (
+        f"these acap-* hosts fell through to a non-acap role: {misclassified}"
+    )
+
+
+def test_render_emits_proxy_jump() -> None:
+    """``ssh.proxy_jump`` must surface as ``ProxyJump <hostname>`` in the SSH config.
+
+    Codex round-2 P2: the field was loaded from yaml but silently dropped at
+    render time, leaving bastion-only hosts unusable.
+    """
+    h = Host(
+        name="behind-bastion",
+        addresses={"public": "10.99.0.1"},  # type: ignore[arg-type]
+        ssh={"user": "peter", "proxy_jump": "bastion.example.com"},  # type: ignore[arg-type]
+    )
+    out = render_ssh_config([h])
+    assert "Host behind-bastion" in out
+    assert "    ProxyJump bastion.example.com" in out
+
+
+def test_render_emits_legacy_hostname_aliases() -> None:
+    """``hostnames[]`` must merge into the OpenSSH multi-host ``Host`` line.
+
+    Codex round-2 P1 (from plan reviewer): without this, T11's legacy-bookmark
+    preservation breaks during the rename window — e.g. ``ssh sg-prod-1`` would
+    no longer match the rendered config because only ``Host acap-sg-prod-1``
+    is emitted.
+    """
+    h = Host(
+        name="acap-sg-prod-1",
+        hostnames=["sg-prod-1"],
+        addresses={"lan": "10.1.1.100"},  # type: ignore[arg-type]
+    )
+    out = render_ssh_config([h])
+    assert "Host acap-sg-prod-1 sg-prod-1" in out
+    # multi-alias case: both aliases on the same Host line
+    h2 = Host(
+        name="acap-sg-prod-1",
+        hostnames=["sg-prod-1", "sg1"],
+        addresses={"lan": "10.1.1.100"},  # type: ignore[arg-type]
+    )
+    out2 = render_ssh_config([h2])
+    assert "Host acap-sg-prod-1 sg-prod-1 sg1" in out2
+    # zero-aliases case is unchanged: just ``Host <name>``
+    h3 = Host(name="solo", addresses={"public": "1.1.1.1"})  # type: ignore[arg-type]
+    out3 = render_ssh_config([h3])
+    assert "Host solo\n" in out3
