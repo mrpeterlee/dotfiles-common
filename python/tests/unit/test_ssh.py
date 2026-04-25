@@ -153,3 +153,107 @@ def test_no_legacy_aliases_emits_only_canonical(tmp_path: Path) -> None:
     assert out.count("Host ") == 1
     # No legacy-alias annotation.
     assert "Legacy alias" not in out
+
+
+# ----------------------------------------------------------------------
+# P4.5 T4 — alias_overrides[] (Option B) CLI-surface coverage
+# ----------------------------------------------------------------------
+
+
+def test_alias_override_emits_separate_host_block(tmp_path: Path) -> None:
+    """``alias_overrides:`` must render as a SEPARATE ``Host`` stanza whose
+    HostName/Port/User/IdentityFile come from the OVERRIDE, not from the
+    canonical host. This is the difference vs. Option A
+    (``legacy_aliases``), where the alias stanza inherits the canonical's
+    params.
+
+    Models the ``oracle-a`` shape — canonical ``acap-sg-egress-1`` runs as
+    ``peter`` on port 55555 with ``peter_acap``, but the legacy ``oracle-a``
+    bookmark must connect as ``ubuntu`` on port 22 with ``oracle_a``.
+    """
+    inv = tmp_path / "inv"
+    inv.mkdir(parents=True)
+    (inv / "acap-sg-egress-1.yaml").write_text(
+        "name: acap-sg-egress-1\n"
+        "addresses:\n"
+        "  public: 152.42.226.215\n"
+        "ssh:\n"
+        "  port: 55555\n"
+        "  user: peter\n"
+        "  identity: peter_acap\n"
+        "alias_overrides:\n"
+        "  - name: oracle-a\n"
+        "    addr: 152.42.226.215\n"
+        "    user: ubuntu\n"
+        "    identity: oracle_a\n"
+    )
+    result = CliRunner().invoke(main, ["ssh", "render", "--inventory", str(inv)])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    # Two SEPARATE Host stanzas (NOT multi-host syntax).
+    assert "Host acap-sg-egress-1" in out
+    assert "Host oracle-a" in out
+    assert "Host acap-sg-egress-1 oracle-a" not in out
+    # Canonical stanza carries canonical params.
+    assert "    Port 55555" in out
+    assert "    User peter" in out
+    assert "    IdentityFile ~/.ssh/peter_acap" in out
+    # Alias stanza carries OVERRIDE params, NOT canonical's.
+    assert "    User ubuntu" in out
+    assert "    IdentityFile ~/.ssh/oracle_a" in out
+    # Override uses default port 22 → no Port line on the alias side; only
+    # the canonical's Port 55555 appears in the rendered output.
+    assert out.count("    Port 55555") == 1
+    assert "    Port 22" not in out
+    # Spec-format Option B comment line precedes the alias stanza.
+    assert "# Option B alias for acap-sg-egress-1 — distinct connection params" in out
+
+
+def test_alias_overrides_combined_with_legacy_aliases(tmp_path: Path) -> None:
+    """A single host may carry BOTH ``legacy_aliases:`` (Option A — same
+    params) AND ``alias_overrides:`` (Option B — distinct params). Both
+    forms render in the same output, each as its own Host stanza, with
+    the right params attached to each.
+    """
+    inv = tmp_path / "inv"
+    inv.mkdir(parents=True)
+    (inv / "acap-sg-prod-1.yaml").write_text(
+        "name: acap-sg-prod-1\n"
+        "addresses:\n"
+        "  lan: 10.1.1.100\n"
+        "ssh:\n"
+        "  port: 55555\n"
+        "  user: peter\n"
+        "  identity: peter_acap\n"
+        "legacy_aliases:\n"
+        "  - sg-prod-1\n"
+        "alias_overrides:\n"
+        "  - name: acap-reality-1\n"
+        "    addr: 10.1.1.100\n"
+        "    port: 22\n"
+        "    user: reality\n"
+        "    identity: reality_key\n"
+        "    proxy_jump: bastion.example.com\n"
+    )
+    result = CliRunner().invoke(main, ["ssh", "render", "--inventory", str(inv)])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    # Three Host stanzas: canonical + 1 Option A alias + 1 Option B alias.
+    assert "Host acap-sg-prod-1" in out
+    assert "Host sg-prod-1" in out  # Option A
+    assert "Host acap-reality-1" in out  # Option B
+    # Both annotation styles appear.
+    assert "# Legacy alias for acap-sg-prod-1 — remove when SSH bookmarks are migrated" in out
+    assert "# Option B alias for acap-sg-prod-1 — distinct connection params" in out
+    # Option A alias inherits canonical params: User peter appears
+    # twice (canonical + Option A alias), NOT three times — Option B uses
+    # its own user.
+    assert out.count("    User peter") == 2
+    assert "    User reality" in out
+    assert "    IdentityFile ~/.ssh/reality_key" in out
+    # Only the Option B alias has ProxyJump (canonical + Option A don't).
+    assert out.count("    ProxyJump bastion.example.com") == 1
+    # HostName 10.1.1.100 appears on all three stanzas — the Option B alias
+    # happens to share an addr with the canonical here, but the value is
+    # taken from the OVERRIDE's `addr`, not inherited from the canonical.
+    assert out.count("    HostName 10.1.1.100") == 3

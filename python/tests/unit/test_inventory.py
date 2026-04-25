@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from acap_dotfiles.core.inventory import (
     Headscale,
     Host,
+    LegacyAliasOverride,
     TunnelMonitor,
     load_hosts,
     render_ssh_config,
@@ -461,3 +462,102 @@ def test_render_no_alias_stanza_when_legacy_aliases_empty() -> None:
     out = render_ssh_config([h])
     assert out.count("Host ") == 1  # exactly one Host line
     assert "Legacy alias" not in out
+
+
+# ----------------------------------------------------------------------
+# P4.5 T4 — alias_overrides[] (Option B from the round-3 design tradeoff)
+# ----------------------------------------------------------------------
+
+
+def test_alias_override_loads_from_yaml(tmp_path: Path) -> None:
+    """Full YAML round-trip: ``alias_overrides:`` parses into a list of
+    ``LegacyAliasOverride`` models with all override fields populated.
+
+    Uses an ``acap-sg-egress-1`` shape — the canonical host runs as ``peter``
+    on the standard port using the ``peter_acap`` key, but the legacy
+    ``oracle-a`` bookmark needs a different user (``ubuntu``), key
+    (``oracle_a``), and may run on a different addr. ``oracle-b`` is the
+    shape variant that adds a ``proxy_jump`` and a custom port to prove the
+    full surface round-trips.
+    """
+    yaml_file = tmp_path / "acap-sg-egress-1.yaml"
+    yaml_file.write_text(
+        """
+name: acap-sg-egress-1
+addresses:
+  public: 152.42.226.215
+ssh:
+  port: 55555
+  user: peter
+  identity: peter_acap
+alias_overrides:
+  - name: oracle-a
+    addr: 152.42.226.215
+    user: ubuntu
+    identity: oracle_a
+    note: pre-rename bookmark — keep until 2026-Q3
+  - name: oracle-b
+    addr: oracle-b.example.com
+    port: 2222
+    user: opc
+    identity: oracle_b
+    proxy_jump: bastion.example.com
+"""
+    )
+    h = load_hosts(tmp_path)[0]
+    assert len(h.alias_overrides) == 2
+    a, b = h.alias_overrides
+    assert isinstance(a, LegacyAliasOverride)
+    assert a.name == "oracle-a"
+    assert a.addr == "152.42.226.215"
+    assert a.port == 22  # default
+    assert a.user == "ubuntu"
+    assert a.identity == "oracle_a"
+    assert a.identity_file == "~/.ssh/oracle_a"
+    assert a.proxy_jump is None
+    assert a.note == "pre-rename bookmark — keep until 2026-Q3"
+    assert b.name == "oracle-b"
+    assert b.addr == "oracle-b.example.com"
+    assert b.port == 2222
+    assert b.user == "opc"
+    assert b.identity_file == "~/.ssh/oracle_b"
+    assert b.proxy_jump == "bastion.example.com"
+    # Backward-compat: hosts WITHOUT alias_overrides default to [].
+    (tmp_path / "plain.yaml").write_text("name: plain\naddresses:\n  public: 1.1.1.1\n")
+    plain = next(x for x in load_hosts(tmp_path) if x.name == "plain")
+    assert plain.alias_overrides == []
+
+
+def test_alias_override_proxy_jump_optional() -> None:
+    """An override without ``proxy_jump`` must NOT emit a ``ProxyJump`` line
+    even when the canonical host has one set. Each override's stanza is
+    independent of the canonical's params — that's the whole point of
+    Option B.
+    """
+    h = Host(
+        name="acap-sg-egress-1",
+        addresses={"public": "152.42.226.215"},  # type: ignore[arg-type]
+        ssh={  # type: ignore[arg-type]
+            "user": "peter",
+            "identity": "peter_acap",
+            "proxy_jump": "bastion.example.com",  # canonical uses ProxyJump
+        },
+        alias_overrides=[
+            LegacyAliasOverride(
+                name="oracle-a",
+                addr="152.42.226.215",
+                user="ubuntu",
+                identity="oracle_a",
+                # NB: proxy_jump deliberately unset
+            )
+        ],
+    )
+    out = render_ssh_config([h])
+    # Canonical stanza has ProxyJump.
+    assert "Host acap-sg-egress-1" in out
+    # Alias stanza is present but does NOT inherit the canonical's ProxyJump.
+    assert "Host oracle-a" in out
+    # Exactly one ProxyJump emission — the canonical's, not the alias's.
+    assert out.count("    ProxyJump bastion.example.com") == 1
+    # Sanity: the alias block is annotated as Option B.
+    assert "# Option B alias for acap-sg-egress-1 — distinct connection params" in out
