@@ -472,3 +472,65 @@ def test_platform_data_wsl_detection_tolerates_missing_proc_version(
     )
     data = restore_module._platform_data()
     assert data["isWSL"] is False
+
+
+def test_stub_chezmoi_toml_path_with_backslashes_and_quotes_together(
+    tmp_path: Path,
+) -> None:
+    """pr-test-analyzer MEDIUM #1: paths with BOTH backslashes AND quotes must
+    round-trip. Locks in the "use a real TOML serializer, never hand-roll"
+    invariant — a hand-rolled escape that forgets either axis would regress."""
+    from acap_dotfiles.commands.restore import _stub_chezmoi_toml
+
+    # Construct a string that contains both escape-sensitive characters.
+    # Use PureWindowsPath for the backslash side (Linux-host safe) and
+    # then join a quote-bearing segment via str manipulation so the path
+    # object stays valid — `PureWindowsPath` accepts quotes in segments.
+    weird = PureWindowsPath(r'C:\Users\me\dir"quoted"') / ".files"
+    content = _stub_chezmoi_toml(weird)  # type: ignore[arg-type]
+    parsed = tomllib.loads(content)
+    assert parsed["sourceDir"] == str(weird)
+
+
+def test_detect_wsl_is_case_insensitive_for_microsoft_capital_m(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    """pr-test-analyzer MEDIUM #3: WSL1's classic kernel marker uses capital
+    `Microsoft` (`Microsoft@...` in the compiler signature). The detector
+    must match regardless of case."""
+    from acap_dotfiles.commands import restore as restore_module
+
+    proc_version = tmp_path / "version"
+    proc_version.write_text(
+        "Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com) (gcc version 5.4.0) #2311\n"
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module, "_PROC_VERSION_PATH", proc_version
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module._platform, "system", lambda: "Linux"
+    )
+    data = restore_module._platform_data()
+    assert data["isWSL"] is True
+
+
+def test_platform_data_non_linux_host_with_wsl_marker_is_not_flagged(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    """pr-test-analyzer MEDIUM #2: a Darwin / Windows host that happens to have
+    a `/proc/version` shim (Cygwin, Git Bash, sandbox runtime) containing
+    WSL markers must still report `isWSL=False`, because the code gates on
+    `is_linux and _detect_wsl()`. Pins the Linux-gate explicitly."""
+    from acap_dotfiles.commands import restore as restore_module
+
+    proc_version = tmp_path / "version"
+    proc_version.write_text("Linux version 5.15.153.1-microsoft-standard-WSL2\n")
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module, "_PROC_VERSION_PATH", proc_version
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        restore_module._platform, "system", lambda: "Darwin"
+    )
+    data = restore_module._platform_data()
+    assert data["isWSL"] is False
+    assert data["isLinux"] is False
