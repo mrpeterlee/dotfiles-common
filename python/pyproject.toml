@@ -56,5 +56,12 @@ exclude = ["src/acap_dotfiles/commands/.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `pythonpath = ["."]` so `tests.unit.<module>` resolves as a package
+# regardless of pytest's auto-rootdir behaviour. Required by
+# tests/unit/test_plugin_discovery.py which registers an entry point
+# pointing at `tests.unit.test_plugin_discovery:_stub_plugin`. Without
+# this, CI runs (uv 0.11+) fail with `ModuleNotFoundError: No module
+# named 'tests'` — locally pytest's auto-rootdir already covers it.
+pythonpath = ["."]
 addopts = "-ra --strict-markers"
 markers = ["integration: requires Docker"]
