@@ -24,10 +24,16 @@ def test_discover_binary_returns_first_match_in_path(tmp_path: Path) -> None:
 def test_discover_binary_falls_back_to_local_bin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import os as _os
+
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows uses USERPROFILE not HOME
     bindir = tmp_path / ".local" / "bin"
     bindir.mkdir(parents=True)
-    fallback = bindir / "chezmoi"
+    # discover_binary appends `.exe` on Windows; the fallback file must
+    # match that name to be found by the resolver.
+    suffix = ".exe" if _os.name == "nt" else ""
+    fallback = bindir / f"chezmoi{suffix}"
     fallback.write_text("#!/bin/sh\necho fallback")
     fallback.chmod(0o755)
     with patch("acap_dotfiles.core.chezmoi.shutil.which", return_value=None):
