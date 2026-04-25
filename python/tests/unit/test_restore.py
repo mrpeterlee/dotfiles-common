@@ -147,8 +147,12 @@ def test_restore_non_tty_auto_injects_force_and_writes_stub(
     assert "[data]" in content
     # Codex round-4 P2: stub must include root-level sourceDir so subsequent
     # direct chezmoi calls (e.g. `dots status` → `chezmoi managed`) resolve to
-    # cfg.home instead of chezmoi's default ~/.local/share/chezmoi.
-    assert f'sourceDir = "{tmp_path}"' in content
+    # cfg.home instead of chezmoi's default ~/.local/share/chezmoi. Parse the
+    # TOML rather than substring-matching — on Windows the path contains
+    # backslashes that ``tomli_w.dumps`` correctly escapes (``\\``) so a raw
+    # f-string won't match.
+    parsed = tomllib.loads(content)
+    assert parsed.get("sourceDir") == str(tmp_path)
     # And it must come BEFORE the [data] table (TOML root keys must precede tables).
     assert content.index("sourceDir") < content.index("[data]")
 
@@ -407,11 +411,18 @@ def test_stub_chezmoi_toml_path_with_quotes_produces_valid_toml(
     tmp_path: Path,
 ) -> None:
     """Edge case alongside P2 #1: literal double-quotes in a path must not
-    break TOML parsing either (basic-string escape handling)."""
+    break TOML parsing either (basic-string escape handling).
+
+    Windows filesystems reject ``"`` in file/directory names with
+    ``WinError 123``, so the test constructs a ``Path`` object with a
+    quote-bearing name without ever calling ``mkdir``. The serializer
+    works on the path STRING, not on filesystem state, so this exercises
+    the same escape logic without the platform-specific fs limitation.
+    """
     from acap_dotfiles.commands.restore import _stub_chezmoi_toml
 
+    # No mkdir — _stub_chezmoi_toml only stringifies the path.
     weird_path = tmp_path / 'dir"with"quotes'
-    weird_path.mkdir()
     content = _stub_chezmoi_toml(weird_path)
     parsed = tomllib.loads(content)
     assert parsed["sourceDir"] == str(weird_path)

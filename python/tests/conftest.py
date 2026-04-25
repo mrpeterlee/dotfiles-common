@@ -30,3 +30,23 @@ CHEZMOI_BIN_ARGV: str = str(CHEZMOI_BIN)
 def _no_color(monkeypatch: pytest.MonkeyPatch) -> None:
     """Force NO_COLOR for all tests so output assertions are stable."""
     monkeypatch.setenv("NO_COLOR", "1")
+
+
+@pytest.fixture(autouse=True)
+def _allow_unregistered_subprocess(fake_process: object) -> None:  # type: ignore[no-untyped-def]
+    """Let stdlib subprocess calls pass through pytest-subprocess.
+
+    On Windows, ``platform.uname()`` (transitively called from
+    ``platform.system()`` / ``platform.node()`` etc.) subprocesses ``ver``
+    to read the OS release. With strict ``fake_process`` interception that
+    raises ``ProcessNotRegisteredError("The process 'ver' was not
+    registered.")`` and breaks every test that touches the platform module
+    via ``acap_dotfiles.commands.restore._platform_data`` etc.
+
+    Calls to chezmoi (and any other binary tests register explicitly) still
+    hit the registered fakes — ``allow_unregistered`` only controls what
+    happens to UNregistered calls. Letting them through to the real OS is
+    the correct semantics for stdlib internals; only the chezmoi argv is
+    subject to test assertions anyway.
+    """
+    fake_process.allow_unregistered(True)  # type: ignore[attr-defined]
