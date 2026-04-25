@@ -167,6 +167,69 @@ chezmoi init --force
 chezmoi apply
 ```
 
+## Pre-PR / Post-PR Code Review (mandatory)
+
+**Every PR MUST be reviewed by `codex review` from a different model
+family before it can be merged.** This is an independent second
+opinion on top of any in-session Claude review and on top of CI.
+
+### Workflow
+
+1. **Open the PR** (`gh pr create`).
+2. **Immediately run `codex review --base main`** from the head
+   worktree. This reviews the **entire branch diff** (`origin/main..HEAD`),
+   not just the tip commit — important because PRs with multiple
+   commits would otherwise let earlier commits bypass the gate. Use
+   `model_reasoning_effort="high"`. Web search is enabled via the codex
+config (`web_search = "cached"` in `~/.codex/config.toml`) rather
+than the deprecated `--enable web_search_cached` flag.
+
+   Use `codex review --commit <sha>` ONLY as a follow-up to inspect
+   a specific fix commit during the iteration loop, never as the
+   primary gate.
+3. **Triage the verdict:**
+   - `[P1]` present → blocker. Fix in a follow-up commit on the same
+     branch and re-run `codex review --base main` (full-branch).
+   - `[P2]` only → fix-if-cheap; otherwise list each P2 verbatim
+     under `## Deferred P2s` in the PR body with a one-line
+     justification.
+   - `[P3]` only → optional. Address or note.
+   - 0 findings → record verdict line in the PR body and proceed.
+4. **Re-run `codex review --base main` after every fix push** until
+   P1-free, then merge. The `--commit <sha>` form is fine for
+   smoke-checking that a single fix landed cleanly, but the
+   merge-gate is always the full-branch verdict.
+5. **Paste the verdict line verbatim** into the PR body under a
+   `## Pre-PR review` heading. Format:
+   ```
+   ## Pre-PR review
+   - Reviewer: codex (model_reasoning_effort=high, web_search_cached)
+   - Scope: --base main (origin/main..HEAD)
+   - Round 1 (HEAD <sha>): <n P1 / n P2 / n P3 - PASS|FAIL>
+   - Round 2 (HEAD <sha>): <...>
+   - Final verdict: <verbatim quote from codex>
+   - Deferred P2s: <bullet list with justification, or "none">
+   ```
+
+### Why
+
+Same-model-family review (Claude reviewing Claude) misses class of
+bugs that surface across a model boundary. Live cases on this repo:
+
+- 2026-04-24 #16: codex caught chezmoi `private_dot_claude/...`
+  ignore patterns that didn't match (target-path vs source-state).
+- 2026-04-24 P3 T1: codex caught `./cli` file-vs-directory
+  collision that broke the legacy entry-point.
+- 2026-04-24 P3 T2: codex caught `build_argv` dry-run gate skipping
+  injection when global flags precede the verb.
+
+### Bypass
+
+Only with explicit operator approval (Telegram message naming the
+PR). When bypassing, annotate `## Pre-PR review skipped` in the PR
+body with the operator's message ID and reason; open a follow-up
+task to run `codex review` post-merge.
+
 ## Security Guidelines
 
 1. **Never commit real values** -- base templates stay abstract;
