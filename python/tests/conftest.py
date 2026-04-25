@@ -1,5 +1,6 @@
 """Shared pytest fixtures for unit tests."""
 
+import platform as _platform
 from pathlib import Path
 
 import pytest
@@ -33,20 +34,44 @@ def _no_color(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _allow_unregistered_subprocess(fake_process: object) -> None:  # type: ignore[no-untyped-def]
-    """Let stdlib subprocess calls pass through pytest-subprocess.
+def _stable_platform_uname(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``platform.uname()`` and its companions to a static Linux-shaped
+    result so tests are deterministic across runners.
 
-    On Windows, ``platform.uname()`` (transitively called from
-    ``platform.system()`` / ``platform.node()`` etc.) subprocesses ``ver``
-    to read the OS release. With strict ``fake_process`` interception that
-    raises ``ProcessNotRegisteredError("The process 'ver' was not
-    registered.")`` and breaks every test that touches the platform module
-    via ``acap_dotfiles.commands.restore._platform_data`` etc.
+    On Windows ``platform.uname()`` subprocesses ``ver`` to read the OS
+    release. ``pytest-subprocess`` strict-mode treats that as an
+    unregistered call and raises ``ProcessNotRegisteredError("The process
+    'ver' was not registered.")``, which broke every test that exercises
+    ``acap_dotfiles.commands.restore._platform_data`` (transitively
+    ``platform.system()`` etc).
 
-    Calls to chezmoi (and any other binary tests register explicitly) still
-    hit the registered fakes — ``allow_unregistered`` only controls what
-    happens to UNregistered calls. Letting them through to the real OS is
-    the correct semantics for stdlib internals; only the chezmoi argv is
-    subject to test assertions anyway.
+    Codex round-1 P2: an earlier draft used
+    ``fake_process.allow_unregistered(True)`` instead, which weakened
+    ``test_restore_non_tty_skips_init_when_stub_written``'s
+    "init-must-not-run" regression — an unregistered chezmoi-init call
+    would silently pass through to the real binary if installed. Faking
+    the platform module is narrower: it removes the offending stdlib
+    subprocess at its source, leaving ``fake_process`` strict for every
+    other call.
+
+    Tests that need OS-specific behaviour (e.g. WSL detection) override
+    these per-test by patching ``acap_dotfiles.commands.restore._platform``
+    directly.
     """
-    fake_process.allow_unregistered(True)  # type: ignore[attr-defined]
+
+    # Duck-typed uname result. Avoids `_platform.uname_result(...)` whose
+    # constructor signature differs across Python versions (`processor`
+    # field was removed in 3.13). The application code reads
+    # `.system` / `.node` / `.machine` only — every other consumer uses
+    # the dedicated functions which we patch separately below.
+    class _FakeUname:
+        system = "Linux"
+        node = "test-host"
+        release = "0.0.0-test"
+        version = "#1"
+        machine = "x86_64"
+
+    monkeypatch.setattr(_platform, "uname", lambda: _FakeUname())
+    monkeypatch.setattr(_platform, "system", lambda: "Linux")
+    monkeypatch.setattr(_platform, "node", lambda: "test-host")
+    monkeypatch.setattr(_platform, "machine", lambda: "x86_64")
