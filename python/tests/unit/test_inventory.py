@@ -357,16 +357,107 @@ def test_render_emits_proxy_jump() -> None:
     assert "    ProxyJump bastion.example.com" in out
 
 
-@pytest.mark.skip(
-    reason=(
-        "Round-2 multi-host alias rendering reverted by round-3 P1. "
-        "Aliases like oracle-a/oracle-b/acap-admin in the existing "
-        "inventory need DIFFERENT user/key/port/ProxyJump than the "
-        "canonical host — folding them into one Host block forces them "
-        "to share SSH params and breaks `ssh oracle-a`. Re-enable when "
-        "T11 lands a richer alias model (Option A: legacy_aliases[] "
-        "field for same-params aliases; Option B: per-alias overrides)."
+# ----------------------------------------------------------------------
+# P4 T11 — legacy_aliases[] (Option A from the round-3 design tradeoff)
+# ----------------------------------------------------------------------
+
+
+def test_legacy_aliases_field_defaults_to_empty(tmp_path: Path) -> None:
+    """A host without an explicit ``legacy_aliases:`` key must default to ``[]``."""
+    (tmp_path / "alpha.yaml").write_text("name: alpha\naddresses:\n  public: 10.0.0.1\n")
+    h = load_hosts(tmp_path)[0]
+    assert h.legacy_aliases == []
+
+
+def test_legacy_aliases_loaded_from_yaml(tmp_path: Path) -> None:
+    """``legacy_aliases:`` is parsed off the host yaml and surfaces as ``list[str]``."""
+    yaml_file = tmp_path / "h.yaml"
+    yaml_file.write_text(
+        """
+name: acap-sg-prod-1
+addresses:
+  lan: 10.1.1.100
+ssh:
+  port: 55555
+  user: peter
+  identity: peter_acap
+legacy_aliases:
+  - sg-prod-1
+"""
     )
-)
-def test_render_emits_legacy_hostname_aliases() -> None:
-    """Documented-skip placeholder — see skip reason for rationale."""
+    h = load_hosts(tmp_path)[0]
+    assert h.legacy_aliases == ["sg-prod-1"]
+
+
+def test_render_emits_one_alias_stanza_per_legacy_alias() -> None:
+    """Each entry in ``legacy_aliases[]`` becomes a SEPARATE ``Host`` stanza
+    pointing at the same connection params as the canonical host.
+
+    Multi-host syntax (``Host canonical alias1 alias2``) is intentionally
+    avoided so an alias entry can later diverge into its own inventory file
+    without breaking the SSH config (round-3 P1 rationale).
+    """
+    h = Host(
+        name="acap-sg-prod-1",
+        addresses={"lan": "10.1.1.100"},  # type: ignore[arg-type]
+        ssh={"port": 55555, "user": "peter", "identity": "peter_acap"},  # type: ignore[arg-type]
+        legacy_aliases=["sg-prod-1"],
+    )
+    out = render_ssh_config([h])
+    # Canonical stanza is emitted with full connection params.
+    assert "Host acap-sg-prod-1" in out
+    # Alias stanza is SEPARATE (its own `Host <alias>` line).
+    assert "Host sg-prod-1" in out
+    assert "Host acap-sg-prod-1 sg-prod-1" not in out  # NOT multi-host syntax
+    # Both stanzas carry the same HostName/Port/User/IdentityFile.
+    assert out.count("    HostName 10.1.1.100") == 2
+    assert out.count("    Port 55555") == 2
+    assert out.count("    User peter") == 2
+    assert out.count("    IdentityFile ~/.ssh/peter_acap") == 2
+    # Alias stanza is annotated as legacy so the rename window is visible.
+    assert "# Legacy alias for acap-sg-prod-1" in out
+
+
+def test_render_emits_multiple_legacy_aliases() -> None:
+    """A host with two legacy aliases must yield two alias stanzas."""
+    h = Host(
+        name="acap-sg-admin-1",
+        addresses={"public": "18.138.191.35"},  # type: ignore[arg-type]
+        ssh={"port": 55555, "user": "peter", "identity": "peter_acap"},  # type: ignore[arg-type]
+        legacy_aliases=["acap", "acap-admin"],
+    )
+    out = render_ssh_config([h])
+    assert "Host acap-sg-admin-1" in out
+    assert "Host acap\n" in out  # exact-match check for the alias line
+    assert "Host acap-admin\n" in out
+    # Three full stanzas (canonical + two aliases) → three of each connection field.
+    assert out.count("    HostName 18.138.191.35") == 3
+
+
+def test_render_legacy_alias_carries_proxy_jump() -> None:
+    """When the canonical host uses ProxyJump, the alias stanza inherits it
+    so the bookmark behaves identically to the canonical entry.
+    """
+    h = Host(
+        name="behind-bastion",
+        addresses={"public": "10.99.0.1"},  # type: ignore[arg-type]
+        ssh={"user": "peter", "proxy_jump": "bastion.example.com"},  # type: ignore[arg-type]
+        legacy_aliases=["legacy-alias"],
+    )
+    out = render_ssh_config([h])
+    # Two ProxyJump emissions — one per stanza.
+    assert out.count("    ProxyJump bastion.example.com") == 2
+
+
+def test_render_no_alias_stanza_when_legacy_aliases_empty() -> None:
+    """Absent ``legacy_aliases``, only the canonical stanza is emitted (no
+    spurious comments, no extra ``Host`` lines).
+    """
+    h = Host(
+        name="alpha",
+        addresses={"public": "10.0.0.1"},  # type: ignore[arg-type]
+        ssh={"user": "peter"},  # type: ignore[arg-type]
+    )
+    out = render_ssh_config([h])
+    assert out.count("Host ") == 1  # exactly one Host line
+    assert "Legacy alias" not in out

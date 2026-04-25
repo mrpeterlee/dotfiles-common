@@ -70,3 +70,86 @@ def test_ssh_render_role_filter_excludes_other_roles(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Host alpha" in result.stdout
     assert "Host beta" not in result.stdout
+
+
+# ----------------------------------------------------------------------
+# P4 T11 — legacy_aliases[] CLI-surface coverage
+# ----------------------------------------------------------------------
+
+
+def test_legacy_alias_emits_separate_host_block_with_same_params(tmp_path: Path) -> None:
+    """A host with ``legacy_aliases: [old-name]`` must produce TWO Host blocks
+    in the rendered config (canonical + alias), with identical
+    ``HostName``/``Port``/``User``/``IdentityFile`` lines on both.
+    """
+    inv = tmp_path / "inv"
+    inv.mkdir(parents=True)
+    (inv / "acap-sg-prod-1.yaml").write_text(
+        "name: acap-sg-prod-1\n"
+        "addresses:\n"
+        "  lan: 10.1.1.100\n"
+        "ssh:\n"
+        "  port: 55555\n"
+        "  user: peter\n"
+        "  identity: peter_acap\n"
+        "legacy_aliases:\n"
+        "  - sg-prod-1\n"
+    )
+    result = CliRunner().invoke(main, ["ssh", "render", "--inventory", str(inv)])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    # Two Host stanzas, NOT a multi-host `Host canonical alias` line.
+    assert "Host acap-sg-prod-1" in out
+    assert "Host sg-prod-1" in out
+    assert "Host acap-sg-prod-1 sg-prod-1" not in out
+    # Both stanzas carry identical connection params.
+    assert out.count("    HostName 10.1.1.100") == 2
+    assert out.count("    Port 55555") == 2
+    assert out.count("    User peter") == 2
+    assert out.count("    IdentityFile ~/.ssh/peter_acap") == 2
+    # Spec-format legacy comment line precedes the alias stanza.
+    assert "# Legacy alias for acap-sg-prod-1 — remove when SSH bookmarks are migrated" in out
+
+
+def test_legacy_alias_inherits_proxy_jump(tmp_path: Path) -> None:
+    """The alias Host block also includes ``ProxyJump`` when the canonical
+    has ``ssh.proxy_jump`` set, so the bookmark behaves identically to the
+    canonical entry from the user's shell.
+    """
+    inv = tmp_path / "inv"
+    inv.mkdir(parents=True)
+    (inv / "behind-bastion.yaml").write_text(
+        "name: behind-bastion\n"
+        "addresses:\n"
+        "  public: 10.99.0.1\n"
+        "ssh:\n"
+        "  user: peter\n"
+        "  proxy_jump: bastion.example.com\n"
+        "legacy_aliases:\n"
+        "  - legacy-alias\n"
+    )
+    result = CliRunner().invoke(main, ["ssh", "render", "--inventory", str(inv)])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    # ProxyJump appears twice — once in the canonical stanza, once in the alias.
+    assert out.count("    ProxyJump bastion.example.com") == 2
+
+
+def test_no_legacy_aliases_emits_only_canonical(tmp_path: Path) -> None:
+    """A host with empty (or unset) ``legacy_aliases`` emits only the
+    canonical Host stanza — no spurious alias blocks, no legacy comment
+    line. Regression for the 7 acap hosts that don't yet have
+    ``legacy_aliases`` populated in their inventory yaml.
+    """
+    inv = tmp_path / "inv"
+    inv.mkdir(parents=True)
+    (inv / "alpha.yaml").write_text(
+        "name: alpha\naddresses:\n  public: 10.0.0.1\nssh:\n  user: peter\n"
+    )
+    result = CliRunner().invoke(main, ["ssh", "render", "--inventory", str(inv)])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    # Exactly one `Host ` line in the rendered config.
+    assert out.count("Host ") == 1
+    # No legacy-alias annotation.
+    assert "Legacy alias" not in out
